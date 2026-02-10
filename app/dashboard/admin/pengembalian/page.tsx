@@ -399,9 +399,9 @@ export default function PengembalianPage() {
                                 value={scanKode}
                                 onChange={(e) => setScanKode(e.target.value)}
                             />
-                            <Button onClick={handleScanKode} disabled={scanLoading || !scanKode.trim()}>
-                                {scanLoading ? 'Memproses...' : 'Proses'}
-                            </Button>
+                              <Button onClick={() => handleScanKode()} disabled={scanLoading || !scanKode.trim()}>
+                                  {scanLoading ? 'Memproses...' : 'Proses'}
+                              </Button>
                             <Button variant="outline" onClick={() => setCameraOpen(true)}>
                                 Buka Kamera
                             </Button>
