@@ -10,6 +10,8 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { logActivity } from '@/lib/activity'
+import QrScanner from 'qr-scanner'
+import { uploadImage } from '@/lib/storage'
 
 /* ================= TYPES ================= */
 
@@ -86,6 +88,11 @@ export default function PengembalianPage() {
     const [activeTab, setActiveTab] = useState<'approved' | 'history'>('approved')
     const [searchTerm, setSearchTerm] = useState('')
     const [detailModal, setDetailModal] = useState<{ isOpen: boolean, data: any }>({ isOpen: false, data: null })
+    const [scanKode, setScanKode] = useState('')
+    const [scanLoading, setScanLoading] = useState(false)
+    const [cameraOpen, setCameraOpen] = useState(false)
+    const videoRef = useRef<HTMLVideoElement | null>(null)
+    const scannerRef = useRef<QrScanner | null>(null)
 
     // Return Process State activeLoanData
     const [activeLoanData, setActiveLoanData] = useState<any>(null)
@@ -146,10 +153,18 @@ export default function PengembalianPage() {
                 }
 
                 // 2. Fetch Return History
-                const { data: returnData } = await supabase
-                    .from('pengembalian')
-                    .select('*')
-                    .order('tanggal_kembali_real', { ascending: false })
+                  const { data: returnData } = await supabase
+                      .from('pengembalian')
+                      .select(`
+                          *,
+                          pengembalian_detail(
+                              jumlah,
+                              kondisi,
+                              deskripsi,
+                              foto
+                          )
+                      `)
+                      .order('tanggal_kembali_real', { ascending: false })
 
                 if (returnData) {
                     setHistoryReturns(returnData)
@@ -191,6 +206,76 @@ export default function PengembalianPage() {
         window.scrollTo({ top: 0, behavior: 'smooth' })
     }
 
+    const handleScanKode = async (manualCode?: string) => {
+        const kode = (manualCode ?? scanKode).trim()
+        if (!kode) return
+        setScanLoading(true)
+        try {
+            const { data: loanData, error } = await supabase
+                .from('peminjaman')
+                .select(`
+                    *,
+                    profiles!peminjaman_user_id_fkey(nama_lengkap),
+                    peminjaman_detail(
+                        jumlah,
+                        sarpras(id, nama, kode)
+                    )
+                `)
+                .eq('kode_peminjaman', kode)
+                .in('status', ['dipinjam', 'disetujui'])
+                .single()
+
+            if (error || !loanData) {
+                alert('Kode peminjaman tidak ditemukan atau tidak aktif.')
+                return
+            }
+
+            setScanKode(kode)
+            handleProcessReturn(loanData)
+            setCameraOpen(false)
+        } catch (err) {
+            console.error('Error scanning kode:', err)
+            alert('Gagal memproses kode peminjaman')
+        } finally {
+            setScanLoading(false)
+        }
+    }
+
+    useEffect(() => {
+        if (!cameraOpen) {
+            scannerRef.current?.stop()
+            return
+        }
+
+        const videoEl = videoRef.current
+        if (!videoEl) return
+
+        QrScanner.WORKER_PATH = new URL('qr-scanner/qr-scanner-worker.min.js', import.meta.url).toString()
+
+        const scanner = new QrScanner(
+            videoEl,
+            (result) => {
+                const code = typeof result === 'string' ? result : result.data
+                handleScanKode(code)
+            },
+            {
+                highlightScanRegion: true,
+                highlightCodeOutline: true,
+            }
+        )
+        scannerRef.current = scanner
+        scanner.start().catch((err) => {
+            console.error('Camera start error:', err)
+            alert('Gagal membuka kamera. Pastikan izin kamera diberikan.')
+            setCameraOpen(false)
+        })
+
+        return () => {
+            scanner.stop()
+            scannerRef.current = null
+        }
+    }, [cameraOpen])
+
     const addVerification = () => {
         const newId = (verifications.at(-1)?.id ?? 0) + 1
         const borrowed = activeLoanData?.peminjaman_detail?.[0]?.jumlah ?? 0
@@ -228,60 +313,32 @@ export default function PengembalianPage() {
 
         try {
             const profileId = localStorage.getItem('profileId')
+            if (!profileId) throw new Error('User tidak ditemukan')
 
-            // 1. Insert Pengembalian
-            const { data: pengembalian, error: e1 } = await supabase
-                .from('pengembalian')
-                .insert({
-                    peminjaman_id: activeLoanData.id,
-                    petugas_id: profileId,
-                    tanggal_kembali_real: new Date().toISOString(),
-                    catatan: verifications.map(v => `[${v.kondisi.toUpperCase()} - ${v.jumlah}] ${v.catatan}`).join('\n')
+            // Upload photos first (if any)
+            const fotoUrls = await Promise.all(
+                verifications.map(async (v) => {
+                    if (!v.file) return null
+                    const ext = v.file.name.split('.').pop() || 'jpg'
+                    const fileName = `pengembalian/${activeLoanData.id}/${Date.now()}-${v.id}.${ext}`
+                    return await uploadImage({ bucket: 'SARPRAS', path: fileName, file: v.file })
                 })
-                .select()
-                .single()
-            if (e1) throw e1
+            )
 
-            // 2. Insert Details
-            const detailPayload = verifications.map(v => ({
-                pengembalian_id: pengembalian.id,
-                sarpras_id: activeLoanData.peminjaman_detail[0].sarpras.id,
+            const verificationsPayload = verifications.map((v, idx) => ({
                 jumlah: v.jumlah,
                 kondisi: v.kondisi,
-                deskripsi: v.catatan,
-                damage_detected: v.kondisi !== 'baik',
-                kategori_kerusakan: v.kondisi === 'cacat' ? 'ringan' : v.kondisi === 'rusak' ? 'berat' : null,
+                catatan: v.catatan,
+                foto: fotoUrls[idx] || null,
             }))
-            const { error: e2 } = await supabase.from('pengembalian_detail').insert(detailPayload)
-            if (e2) throw e2
 
-            // 3. Update Peminjaman -> dikembalikan
-            const { error: e3 } = await supabase
-                .from('peminjaman')
-                .update({ status: 'dikembalikan', tanggal_kembali_real: new Date().toISOString() })
-                .eq('id', activeLoanData.id)
-            if (e3) throw e3
+            const { error } = await supabase.rpc('process_return', {
+                p_peminjaman_id: activeLoanData.id,
+                p_petugas_id: profileId,
+                p_verifications: verificationsPayload,
+            })
 
-            // 4. Update Stock (Increase) - exclude items marked as 'hilang'
-            const sarprasId = activeLoanData.peminjaman_detail?.[0]?.sarpras?.id
-            const returnedCount = verifications
-                .filter(v => v.kondisi !== 'hilang')
-                .reduce((a, b) => a + b.jumlah, 0)
-
-            if (sarprasId && returnedCount > 0) {
-                const { data: current, error: eStock } = await supabase
-                    .from('sarpras')
-                    .select('stok_tersedia')
-                    .eq('id', sarprasId)
-                    .single()
-                if (eStock || !current) throw eStock || new Error('Gagal mengambil stok sarpras')
-
-                const { error: e4 } = await supabase
-                    .from('sarpras')
-                    .update({ stok_tersedia: (current.stok_tersedia ?? 0) + returnedCount })
-                    .eq('id', sarprasId)
-                if (e4) throw e4
-            }
+            if (error) throw error
 
             await logActivity({
                 userId: profileId,
@@ -329,6 +386,39 @@ export default function PengembalianPage() {
             {/* TAB SECTION */}
             {!activeLoanData && (
                 <div className="flex flex-col space-y-4">
+                    <Card>
+                        <CardHeader className="flex flex-row items-center justify-between">
+                            <div>
+                                <CardTitle className="text-base">Scan / Input Kode Peminjaman</CardTitle>
+                                <p className="text-xs text-gray-500 mt-1">Scan QR pada bukti peminjaman atau masukkan kodenya.</p>
+                            </div>
+                        </CardHeader>
+                        <CardContent className="flex flex-col md:flex-row gap-3">
+                            <Input
+                                placeholder="Contoh: PJM-20260209-0001"
+                                value={scanKode}
+                                onChange={(e) => setScanKode(e.target.value)}
+                            />
+                            <Button onClick={handleScanKode} disabled={scanLoading || !scanKode.trim()}>
+                                {scanLoading ? 'Memproses...' : 'Proses'}
+                            </Button>
+                            <Button variant="outline" onClick={() => setCameraOpen(true)}>
+                                Buka Kamera
+                            </Button>
+                        </CardContent>
+                        {cameraOpen && (
+                            <CardContent className="pt-0">
+                                <div className="rounded-xl border bg-black/90 p-3">
+                                    <video ref={videoRef} className="h-64 w-full rounded-lg object-cover" />
+                                    <div className="mt-3 flex justify-end">
+                                        <Button variant="outline" onClick={() => setCameraOpen(false)}>
+                                            Tutup Kamera
+                                        </Button>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        )}
+                    </Card>
                     <div className="flex items-center gap-4 border-b border-gray-200">
                         <button
                             onClick={() => setActiveTab('approved')}
@@ -538,6 +628,22 @@ export default function PengembalianPage() {
                                                 value={v.catatan}
                                                 onChange={(e) => updateVerification(v.id, 'catatan', e.target.value)}
                                             />
+                                            {v.file && (
+                                                <div className="mb-3 flex items-center gap-3">
+                                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                    <img
+                                                        src={URL.createObjectURL(v.file)}
+                                                        alt="Preview"
+                                                        className="h-16 w-16 rounded-lg object-cover border"
+                                                    />
+                                                    <button
+                                                        className="text-xs text-gray-500 hover:text-gray-700"
+                                                        onClick={() => updateVerification(v.id, 'file', null)}
+                                                    >
+                                                        Hapus dari tampilan
+                                                    </button>
+                                                </div>
+                                            )}
                                             <div
                                                 className="border-2 border-dashed border-gray-200 rounded-xl p-3 flex items-center gap-3 cursor-pointer hover:bg-gray-50 transition-colors"
                                                 onClick={() => fileInputRefs.current[v.id]?.click()}
@@ -593,16 +699,47 @@ export default function PengembalianPage() {
                                     <span className="font-medium text-green-600">{new Date(detailModal.data.tanggal_kembali_real).toLocaleDateString('id-ID')}</span>
                                 </div>
                             </div>
-                            <div>
-                                <h4 className="font-bold text-sm mb-2">Catatan Petugas</h4>
-                                <p className="text-sm text-gray-600 bg-white border p-3 rounded-lg whitespace-pre-wrap">
-                                    {detailModal.data.catatan || '-'}
-                                </p>
-                            </div>
-                        </CardContent>
-                    </Card>
-                </div>
-            )}
+                              <div>
+                                  <h4 className="font-bold text-sm mb-2">Catatan Petugas</h4>
+                                  <p className="text-sm text-gray-600 bg-white border p-3 rounded-lg whitespace-pre-wrap">
+                                      {detailModal.data.catatan || '-'}
+                                  </p>
+                              </div>
+                              <div>
+                                  <h4 className="font-bold text-sm mb-2">Foto Bukti</h4>
+                                  {detailModal.data.pengembalian_detail?.some((d: any) => d.foto) ? (
+                                      <div className="grid grid-cols-2 gap-3">
+                                          {detailModal.data.pengembalian_detail
+                                              .filter((d: any) => d.foto)
+                                              .map((d: any, idx: number) => (
+                                                  <a
+                                                      key={`${d.foto}-${idx}`}
+                                                      href={d.foto}
+                                                      target="_blank"
+                                                      rel="noreferrer"
+                                                      className="group block"
+                                                  >
+                                                      <div className="relative overflow-hidden rounded-lg border bg-gray-50">
+                                                          <img
+                                                              src={d.foto}
+                                                              alt={`Bukti ${idx + 1}`}
+                                                              className="h-28 w-full object-cover transition-transform duration-200 group-hover:scale-105"
+                                                          />
+                                                      </div>
+                                                      <div className="mt-1 text-xs text-gray-600">
+                                                          {d.kondisi?.toUpperCase()} • {d.jumlah} unit
+                                                      </div>
+                                                  </a>
+                                              ))}
+                                      </div>
+                                  ) : (
+                                      <p className="text-sm text-gray-500">-</p>
+                                  )}
+                              </div>
+                          </CardContent>
+                      </Card>
+                  </div>
+              )}
         </div>
     )
 }

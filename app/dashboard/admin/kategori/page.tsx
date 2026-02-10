@@ -13,6 +13,7 @@ interface Kategori {
     nama: string
     deskripsi: string | null
     icon: string | null
+    is_active?: boolean
     created_at: string
     updated_at: string
 }
@@ -27,6 +28,7 @@ export default function KategoriPage() {
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [isEditOpen, setIsEditOpen] = useState(false)
     const [isSubmitting, setIsSubmitting] = useState(false)
+    const [showInactive, setShowInactive] = useState(false)
     const [formData, setFormData] = useState({
         nama: '',
         deskripsi: '',
@@ -63,10 +65,13 @@ export default function KategoriPage() {
                 setUserRole(profile.role)
 
                 // ambil data kategori (SESUAI DB)
-                const { data, error } = await supabase
+                const baseQuery = supabase
                     .from('kategori')
-                    .select('id, nama, deskripsi, icon, created_at, updated_at')
-                    .order('created_at', { ascending: false })
+                    .select('id, nama, deskripsi, icon, is_active, created_at, updated_at')
+
+                const { data, error } = showInactive
+                    ? await baseQuery.order('created_at', { ascending: false })
+                    : await baseQuery.eq('is_active', true).order('created_at', { ascending: false })
 
                 if (!error && data) {
                     setKategoris(data)
@@ -81,7 +86,7 @@ export default function KategoriPage() {
         }
 
         fetchData()
-    }, [router])
+    }, [router, showInactive])
 
     // search filter
     useEffect(() => {
@@ -98,16 +103,46 @@ export default function KategoriPage() {
     const handleDeleteKategori = async (id: string) => {
         if (!confirm('Apakah Anda yakin ingin menghapus kategori ini?')) return
 
-        const { error } = await supabase
+        const { data, error } = await supabase
             .from('kategori')
-            .delete()
+            .update({ is_active: false })
             .eq('id', id)
+            .select('id, is_active')
 
-        if (!error) {
-            setKategoris((prev) => prev.filter((k) => k.id !== id))
-            setFilteredKategoris((prev) => prev.filter((k) => k.id !== id))
+        if (!error && data && data.length > 0) {
+            if (!showInactive) {
+                setKategoris((prev) => prev.filter((k) => k.id !== id))
+                setFilteredKategoris((prev) => prev.filter((k) => k.id !== id))
+            } else {
+                setKategoris((prev) => prev.map((k) => (k.id === id ? { ...k, is_active: false } : k)))
+                setFilteredKategoris((prev) => prev.map((k) => (k.id === id ? { ...k, is_active: false } : k)))
+            }
+            localStorage.setItem('kategoriUpdatedAt', Date.now().toString())
         } else {
             alert('Gagal menghapus kategori')
+        }
+    }
+
+    const handleRestoreKategori = async (id: string) => {
+        if (!confirm('Pulihkan kategori ini agar tampil kembali?')) return
+
+        const { data, error } = await supabase
+            .from('kategori')
+            .update({ is_active: true })
+            .eq('id', id)
+            .select('id, is_active')
+
+        if (!error && data && data.length > 0) {
+            if (!showInactive) {
+                setKategoris((prev) => prev.filter((k) => k.id !== id))
+                setFilteredKategoris((prev) => prev.filter((k) => k.id !== id))
+            } else {
+                setKategoris((prev) => prev.map((k) => (k.id === id ? { ...k, is_active: true } : k)))
+                setFilteredKategoris((prev) => prev.map((k) => (k.id === id ? { ...k, is_active: true } : k)))
+            }
+            localStorage.setItem('kategoriUpdatedAt', Date.now().toString())
+        } else {
+            alert('Gagal memulihkan kategori')
         }
     }
 
@@ -249,14 +284,24 @@ export default function KategoriPage() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                     {/* Search */}
-                    <div className="relative max-w-md">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
-                        <Input
-                            placeholder="Cari kategori..."
-                            className="pl-10"
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                        />
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                        <div className="relative w-full md:max-w-md">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+                            <Input
+                                placeholder="Cari kategori..."
+                                className="pl-10"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                            />
+                        </div>
+                        <label className="flex items-center gap-2 text-sm text-gray-600">
+                            <input
+                                type="checkbox"
+                                checked={showInactive}
+                                onChange={(e) => setShowInactive(e.target.checked)}
+                            />
+                            Tampilkan yang nonaktif
+                        </label>
                     </div>
 
                     {/* Table */}
@@ -267,13 +312,14 @@ export default function KategoriPage() {
                                     <th className="text-left py-3 px-4">Nama</th>
                                     <th className="text-left py-3 px-4">Deskripsi</th>
                                     <th className="text-left py-3 px-4">Dibuat</th>
+                                    <th className="text-left py-3 px-4">Status</th>
                                     <th className="text-left py-3 px-4">Aksi</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {filteredKategoris.length === 0 ? (
                                     <tr>
-                                        <td colSpan={4} className="text-center py-10 text-gray-500">
+                                        <td colSpan={5} className="text-center py-10 text-gray-500">
                                             Data tidak ditemukan
                                         </td>
                                     </tr>
@@ -290,21 +336,39 @@ export default function KategoriPage() {
                                                 {new Date(k.created_at).toLocaleDateString('id-ID')}
                                             </td>
                                             <td className="py-3 px-4">
+                                                {k.is_active === false ? (
+                                                    <span className="rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-600">Nonaktif</span>
+                                                ) : (
+                                                    <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700">Aktif</span>
+                                                )}
+                                            </td>
+                                            <td className="py-3 px-4">
                                                 <div className="flex gap-2">
                                                     <Button
                                                         variant="ghost"
                                                         size="sm"
                                                         onClick={() => openEditModal(k)}
+                                                        disabled={k.is_active === false}
                                                     >
                                                         <Edit className="w-4 h-4 text-blue-600" />
                                                     </Button>
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        onClick={() => handleDeleteKategori(k.id)}
-                                                    >
-                                                        <Trash2 className="w-4 h-4 text-red-600" />
-                                                    </Button>
+                                                    {k.is_active === false ? (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() => handleRestoreKategori(k.id)}
+                                                        >
+                                                            Pulihkan
+                                                        </Button>
+                                                    ) : (
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() => handleDeleteKategori(k.id)}
+                                                        >
+                                                            <Trash2 className="w-4 h-4 text-red-600" />
+                                                        </Button>
+                                                    )}
                                                 </div>
                                             </td>
                                         </tr>

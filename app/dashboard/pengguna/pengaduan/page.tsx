@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { uploadImage } from '@/lib/storage'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -29,6 +30,7 @@ export default function PengaduanPage() {
     })
     const [fotoFile, setFotoFile] = useState<File | null>(null)
     const [fotoPreview, setFotoPreview] = useState<string | null>(null)
+    const [hideFotoPreview, setHideFotoPreview] = useState(false)
 
     useEffect(() => {
         const fetchData = async () => {
@@ -111,27 +113,12 @@ export default function PengaduanPage() {
 
             if (fotoFile) {
                 const ext = fotoFile.name.split('.').pop() || 'jpg'
-                const fileName = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
-                const { error: uploadError } = await supabase
-                    .storage
-                    .from('pengaduan')
-                    .upload(fileName, fotoFile, {
-                        cacheControl: '3600',
-                        upsert: false,
-                    })
-
-                if (uploadError) {
-                    console.error('Error uploading foto:', uploadError)
-                    alert('Gagal mengunggah foto. Silakan coba lagi.')
-                    return
-                }
-
-                const { data: publicData } = supabase
-                    .storage
-                    .from('pengaduan')
-                    .getPublicUrl(fileName)
-
-                fotoUrl = publicData?.publicUrl || null
+                const fileName = `pengaduan/${userId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+                fotoUrl = await uploadImage({
+                    bucket: 'SARPRAS',
+                    path: fileName,
+                    file: fotoFile,
+                })
             }
 
             const { error: pengaduanError } = await supabase
@@ -164,6 +151,7 @@ export default function PengaduanPage() {
                 deskripsi: '',
             })
             setFotoFile(null)
+            setHideFotoPreview(false)
             alert('Pengaduan berhasil dikirim')
         } catch (err) {
             console.error('Error adding pengaduan:', err)
@@ -257,7 +245,7 @@ export default function PengaduanPage() {
                         <label className="text-sm font-semibold text-gray-800">Foto Bukti (Opsional)</label>
                         <div className="flex flex-col gap-4 md:flex-row md:items-center">
                             <div className="flex h-24 w-24 items-center justify-center rounded-xl border-2 border-dashed border-gray-200 bg-gray-50">
-                                {fotoPreview ? (
+                                {fotoPreview && !hideFotoPreview ? (
                                     // eslint-disable-next-line @next/next/no-img-element
                                     <img src={fotoPreview} alt="Preview" className="h-full w-full rounded-xl object-cover" />
                                 ) : (
@@ -271,6 +259,15 @@ export default function PengaduanPage() {
                                     onChange={(e) => setFotoFile(e.target.files?.[0] || null)}
                                     className="block w-full text-sm text-gray-500 file:mr-4 file:rounded-full file:border-0 file:bg-gray-100 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-gray-700 hover:file:bg-gray-200"
                                 />
+                                {fotoPreview && (
+                                    <button
+                                        type="button"
+                                        className="mt-2 text-xs font-semibold text-gray-500 hover:text-gray-700"
+                                        onClick={() => setHideFotoPreview(true)}
+                                    >
+                                        Hapus foto dari tampilan
+                                    </button>
+                                )}
                             </div>
                         </div>
                     </div>

@@ -111,6 +111,11 @@ const petugasNav = [
     icon: LayoutDashboard,
   },
   {
+    title: "Data Sarpras",
+    url: "/dashboard/petugas/sarpras",
+    icon: Package,
+  },
+  {
     title: "Peminjaman",
     url: "/dashboard/petugas/peminjaman",
     icon: ArrowUpRight,
@@ -254,7 +259,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               Anda akan diarahkan ke halaman sign in.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter className="gap-2 sm:gap-3">
             <Button variant="outline" onClick={() => setLogoutOpen(false)}>
               Cancel
             </Button>

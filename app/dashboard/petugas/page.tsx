@@ -302,7 +302,7 @@ export default function PetugasDashboard() {
                         <CardContent className="space-y-3">
                             <button
                                 className="w-full rounded-2xl border border-slate-100 bg-white p-4 text-left shadow-sm transition hover:border-slate-200 hover:bg-slate-50"
-                                onClick={() => router.push('/dashboard/petugas/peminjaman')}
+                                onClick={() => router.push('/dashboard/petugas/sarpras')}
                             >
                                 <div className="flex items-center gap-3">
                                     <div className="rounded-xl bg-slate-100 p-2 text-slate-700">

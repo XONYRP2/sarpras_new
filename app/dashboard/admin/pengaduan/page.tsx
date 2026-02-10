@@ -45,6 +45,7 @@ export default function PengaduanPage() {
     const [filteredPengaduans, setFilteredPengaduans] = useState<Pengaduan[]>([])
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [isSubmitting, setIsSubmitting] = useState(false)
+    const [hiddenFotoIds, setHiddenFotoIds] = useState<Record<string, boolean>>({})
     const [formData, setFormData] = useState({
         user_id: '',
         judul: '',
@@ -322,6 +323,7 @@ export default function PengaduanPage() {
                                     <th className="text-left py-3 px-4 font-semibold text-gray-600">Pelapor</th>
                                     <th className="text-left py-3 px-4 font-semibold text-gray-600">Sarpras</th>
                                     <th className="text-left py-3 px-4 font-semibold text-gray-600">Deskripsi</th>
+                                    <th className="text-left py-3 px-4 font-semibold text-gray-600">Foto</th>
                                     <th className="text-left py-3 px-4 font-semibold text-gray-600">Status</th>
                                     <th className="text-left py-3 px-4 font-semibold text-gray-600">Tanggal</th>
                                     <th className="text-left py-3 px-4 font-semibold text-gray-600">Aksi</th>
@@ -330,7 +332,7 @@ export default function PengaduanPage() {
                             <tbody>
                                 {filteredPengaduans.length === 0 ? (
                                     <tr>
-                                        <td colSpan={7} className="text-center py-8 text-gray-500">
+                                        <td colSpan={8} className="text-center py-8 text-gray-500">
                                             {searchTerm ? 'Tidak ada pengaduan yang sesuai dengan pencarian' : 'Tidak ada pengaduan ditemukan'}
                                         </td>
                                     </tr>
@@ -347,6 +349,22 @@ export default function PengaduanPage() {
                                                 </td>
                                                 <td className="py-3 px-4 text-gray-600 text-sm max-w-xs truncate">
                                                     {pengaduan.deskripsi}
+                                                </td>
+                                                <td className="py-3 px-4 text-gray-600 text-sm">
+                                                    {pengaduan.foto && !hiddenFotoIds[pengaduan.id] ? (
+                                                        <div className="flex items-center gap-2">
+                                                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                            <img src={pengaduan.foto} alt="Foto pengaduan" className="h-10 w-10 rounded-md object-cover border" />
+                                                            <button
+                                                                className="text-xs text-gray-500 hover:text-gray-700"
+                                                                onClick={() => setHiddenFotoIds((prev) => ({ ...prev, [pengaduan.id]: true }))}
+                                                            >
+                                                                Sembunyikan
+                                                            </button>
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-xs text-gray-400">-</span>
+                                                    )}
                                                 </td>
                                                 <td className="py-3 px-4">
                                                     <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${getStatusBadgeClass(pengaduan.status)}`}>

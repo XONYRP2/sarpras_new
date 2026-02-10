@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Eye, Search, MoreVertical, X, CheckCircle, XCircle } from 'lucide-react'
+import { Eye, Search, MoreVertical, X, CheckCircle, XCircle, FileText } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import {
     DropdownMenu,
@@ -71,6 +71,8 @@ export default function PeminjamanPage() {
     const [selectedLoan, setSelectedLoan] = useState<Peminjaman | null>(null)
     const [rejectModalOpen, setRejectModalOpen] = useState(false)
     const [rejectReason, setRejectReason] = useState('')
+    const [printModalOpen, setPrintModalOpen] = useState(false)
+    const [printLoan, setPrintLoan] = useState<Peminjaman | null>(null)
 
     const fetchData = async () => {
         try {
@@ -182,6 +184,16 @@ export default function PeminjamanPage() {
                 description: `Menyetujui peminjaman ${loan.kode_peminjaman || loan.id}`,
                 dataAfter: { status: 'disetujui', peminjaman_id: loan.id },
             })
+            await logActivity({
+                userId: profileId,
+                action: 'update',
+                module: 'peminjaman',
+                description: `Menyetujui peminjaman ${loan.kode_peminjaman || loan.id}`,
+                dataAfter: { status: 'disetujui', peminjaman_id: loan.id },
+            })
+
+            setPrintLoan(loan)
+            setPrintModalOpen(true)
             fetchData()
         } catch (err: any) {
             alert('Gagal menyetujui: ' + err.message)
@@ -248,6 +260,15 @@ export default function PeminjamanPage() {
         } finally {
             setActionLoading(null)
         }
+    }
+
+    const handlePrint = (loan: Peminjaman) => {
+        setPrintLoan(loan)
+        setPrintModalOpen(true)
+    }
+
+    const handlePrintNow = () => {
+        window.print()
     }
 
     const filteredData = peminjamans.filter(item => {
@@ -386,6 +407,11 @@ export default function PeminjamanPage() {
                                                     <DropdownMenuItem onClick={() => { setSelectedLoan(item); setDetailModalOpen(true); }}>
                                                         <Eye className="mr-2 h-4 w-4 opacity-70" /> Lihat Detail
                                                     </DropdownMenuItem>
+                                                    {(item.status === 'disetujui' || item.status === 'dipinjam') && (
+                                                        <DropdownMenuItem onClick={() => handlePrint(item)}>
+                                                            <FileText className="mr-2 h-4 w-4 opacity-70" /> Cetak Bukti
+                                                        </DropdownMenuItem>
+                                                    )}
                                                     {item.status === 'menunggu' && (
                                                         <>
                                                             <DropdownMenuItem onClick={() => handleApprove(item.id)} disabled={!!actionLoading}>
@@ -483,6 +509,67 @@ export default function PeminjamanPage() {
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setRejectModalOpen(false)}>Batal</Button>
                         <Button variant="destructive" onClick={handleReject} disabled={!rejectReason.trim()}>Tolak Permohonan</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Print Modal */}
+            <Dialog open={printModalOpen} onOpenChange={setPrintModalOpen}>
+                <DialogContent className="max-w-2xl">
+                    <DialogHeader>
+                        <DialogTitle>Bukti Peminjaman</DialogTitle>
+                        <DialogDescription>
+                            Cetak bukti ini dan lampirkan pada barang. QR digunakan saat pengembalian.
+                        </DialogDescription>
+                    </DialogHeader>
+                    {printLoan && (
+                        <div className="grid grid-cols-1 md:grid-cols-[1.2fr_0.8fr] gap-6 py-2">
+                            <div className="space-y-3">
+                                <div className="rounded-xl border bg-white p-4">
+                                    <div className="text-xs text-gray-500">Kode Peminjaman</div>
+                                    <div className="text-lg font-bold font-mono text-gray-900">{printLoan.kode_peminjaman}</div>
+                                </div>
+                                <div className="rounded-xl border bg-white p-4 space-y-2">
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-gray-500">Peminjam</span>
+                                        <span className="font-medium">{printLoan.profiles?.nama_lengkap}</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-gray-500">Tanggal Pinjam</span>
+                                        <span className="font-medium">{new Date(printLoan.tanggal_pinjam).toLocaleDateString('id-ID')}</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-gray-500">Estimasi Kembali</span>
+                                        <span className="font-medium">{new Date(printLoan.tanggal_kembali_estimasi).toLocaleDateString('id-ID')}</span>
+                                    </div>
+                                </div>
+                                <div className="rounded-xl border bg-white p-4">
+                                    <div className="text-xs font-semibold text-gray-500 mb-2">Barang Dipinjam</div>
+                                    <div className="space-y-2">
+                                        {printLoan.peminjaman_detail.map((detail, i) => (
+                                            <div key={i} className="flex justify-between text-sm">
+                                                <span className="font-medium">{detail.sarpras?.nama}</span>
+                                                <span className="text-gray-600">x{detail.jumlah}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="flex flex-col items-center justify-center rounded-xl border bg-white p-4">
+                                <img
+                                    alt="QR Code"
+                                    className="h-40 w-40"
+                                    src={`https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(printLoan.kode_peminjaman || '')}`}
+                                />
+                                <div className="mt-3 text-xs text-gray-500 text-center">
+                                    Scan QR untuk proses pengembalian
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setPrintModalOpen(false)}>Tutup</Button>
+                        <Button onClick={handlePrintNow}>Cetak</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>

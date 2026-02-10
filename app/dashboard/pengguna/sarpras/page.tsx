@@ -18,6 +18,7 @@ interface Sarpras {
     stok_tersedia: number
     kondisi: string
     merk: string | null
+    foto?: string | null
     created_at: string
     updated_at: string
 }
@@ -53,9 +54,24 @@ export default function SarprasPage() {
     // Borrow Modal State
     const [isBorrowModalOpen, setIsBorrowModalOpen] = useState(false)
     const [selectedSarpras, setSelectedSarpras] = useState<Sarpras | null>(null)
+    const formatDateLocal = (date: Date = new Date()) => {
+        const y = date.getFullYear()
+        const m = String(date.getMonth() + 1).padStart(2, '0')
+        const d = String(date.getDate()).padStart(2, '0')
+        return `${y}-${m}-${d}`
+    }
+
+    const isWeekend = (dateStr: string) => {
+        if (!dateStr) return false
+        const [y, m, d] = dateStr.split('-').map(Number)
+        if (!y || !m || !d) return false
+        const day = new Date(y, m - 1, d).getDay()
+        return day === 0 || day === 6
+    }
+
     const [borrowFormData, setBorrowFormData] = useState<BorrowFormData>({
         jumlah: 1,
-        tanggal_pinjam: new Date().toISOString().split('T')[0],
+        tanggal_pinjam: formatDateLocal(),
         tanggal_kembali_estimasi: '',
         tujuan: ''
     })
@@ -93,7 +109,7 @@ export default function SarprasPage() {
                 // Fetch all sarpras
                 const { data: allSarpras, error: sarprasError } = await supabase
                     .from('sarpras')
-                    .select('id, kode, nama, kategori_id, lokasi_id, stok_total, stok_tersedia, kondisi, merk, created_at, updated_at')
+                    .select('id, kode, nama, kategori_id, lokasi_id, stok_total, stok_tersedia, kondisi, merk, foto, created_at, updated_at')
                     .eq('is_active', true)
                     .order('created_at', { ascending: false })
 
@@ -188,7 +204,7 @@ export default function SarprasPage() {
         setSelectedSarpras(sarpras)
         setBorrowFormData({
             jumlah: 1,
-            tanggal_pinjam: new Date().toISOString().split('T')[0],
+            tanggal_pinjam: formatDateLocal(),
             tanggal_kembali_estimasi: '',
             tujuan: ''
         })
@@ -204,6 +220,11 @@ export default function SarprasPage() {
             !borrowFormData.tujuan
         ) {
             alert('Mohon lengkapi semua field yang wajib diisi')
+            return
+        }
+
+        if (isWeekend(borrowFormData.tanggal_pinjam) || isWeekend(borrowFormData.tanggal_kembali_estimasi)) {
+            alert('Tanggal peminjaman/pengembalian tidak boleh hari Sabtu atau Minggu.')
             return
         }
 
@@ -348,9 +369,18 @@ export default function SarprasPage() {
                                             {getConditionLabel(sarpras.kondisi)}
                                         </span>
                                     </div>
-                                    <span className="text-8xl font-black text-white opacity-20 select-none transform group-hover:scale-110 transition-transform duration-500">
-                                        {sarpras.nama.charAt(0).toUpperCase()}
-                                    </span>
+                                    {sarpras.foto ? (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img
+                                            src={sarpras.foto}
+                                            alt={sarpras.nama}
+                                            className="absolute inset-0 h-full w-full object-cover opacity-70"
+                                        />
+                                    ) : (
+                                        <span className="text-8xl font-black text-white opacity-20 select-none transform group-hover:scale-110 transition-transform duration-500">
+                                            {sarpras.nama.charAt(0).toUpperCase()}
+                                        </span>
+                                    )}
                                 </div>
 
                                 {/* Content section */}
@@ -396,10 +426,19 @@ export default function SarprasPage() {
                     <div className="bg-white rounded-3xl w-full max-w-4xl overflow-hidden shadow-2xl flex flex-col md:flex-row max-h-[90vh]">
                         {/* Left Side - Item Details */}
                         <div className="w-full md:w-1/3 bg-gray-50 border-r border-gray-100 p-8 flex flex-col gap-6">
-                            <div className={cn("aspect-square rounded-2xl flex items-center justify-center shadow-inner", getCardColor(selectedSarpras.nama))}>
-                                <span className="text-8xl font-black text-white/30 select-none">
-                                    {selectedSarpras.nama.charAt(0).toUpperCase()}
-                                </span>
+                            <div className={cn("aspect-square rounded-2xl flex items-center justify-center shadow-inner overflow-hidden", getCardColor(selectedSarpras.nama))}>
+                                {selectedSarpras.foto ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img
+                                        src={selectedSarpras.foto}
+                                        alt={selectedSarpras.nama}
+                                        className="h-full w-full object-cover"
+                                    />
+                                ) : (
+                                    <span className="text-8xl font-black text-white/30 select-none">
+                                        {selectedSarpras.nama.charAt(0).toUpperCase()}
+                                    </span>
+                                )}
                             </div>
 
                             <div>
@@ -453,8 +492,16 @@ export default function SarprasPage() {
                                         <div className="relative">
                                             <Input
                                                 type="date"
+                                                step={1}
                                                 value={borrowFormData.tanggal_pinjam}
-                                                onChange={(e) => setBorrowFormData({ ...borrowFormData, tanggal_pinjam: e.target.value })}
+                                                onChange={(e) => {
+                                                    const next = e.target.value
+                                                    if (isWeekend(next)) {
+                                                        alert('Tanggal pinjam tidak boleh hari Sabtu atau Minggu.')
+                                                        return
+                                                    }
+                                                    setBorrowFormData({ ...borrowFormData, tanggal_pinjam: next })
+                                                }}
                                                 className="rounded-xl border-gray-200 focus:ring-blue-500 focus:border-blue-500 block w-full"
                                             />
                                         </div>
@@ -466,8 +513,16 @@ export default function SarprasPage() {
                                     <Input
                                         type="date"
                                         min={borrowFormData.tanggal_pinjam}
+                                        step={1}
                                         value={borrowFormData.tanggal_kembali_estimasi}
-                                        onChange={(e) => setBorrowFormData({ ...borrowFormData, tanggal_kembali_estimasi: e.target.value })}
+                                        onChange={(e) => {
+                                            const next = e.target.value
+                                            if (isWeekend(next)) {
+                                                alert('Tanggal pengembalian tidak boleh hari Sabtu atau Minggu.')
+                                                return
+                                            }
+                                            setBorrowFormData({ ...borrowFormData, tanggal_kembali_estimasi: next })
+                                        }}
                                         className="rounded-xl border-gray-200 focus:ring-blue-500 focus:border-blue-500 w-full"
                                     />
                                     <p className="text-xs text-gray-400">Kapan Anda berencana mengembalikan item ini?</p>

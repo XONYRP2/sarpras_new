@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { uploadImage } from '@/lib/storage'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -15,6 +16,7 @@ interface Profile {
     nama_lengkap: string
     role: string
     email: string | null
+    foto_profil?: string | null
     created_at: string
 }
 
@@ -28,6 +30,10 @@ export default function ProfilePage() {
         confirmPassword: ''
     })
     const [isChangingPassword, setIsChangingPassword] = useState(false)
+    const [fotoFile, setFotoFile] = useState<File | null>(null)
+    const [fotoPreview, setFotoPreview] = useState<string | null>(null)
+    const [hideFotoPreview, setHideFotoPreview] = useState(false)
+    const [isUploadingFoto, setIsUploadingFoto] = useState(false)
 
     useEffect(() => {
         const fetchProfile = async () => {
@@ -46,6 +52,7 @@ export default function ProfilePage() {
 
                 if (error) throw error
                 setProfile(data)
+                setFotoPreview(data?.foto_profil || null)
             } catch (err) {
                 console.error('Error fetching profile:', err)
             } finally {
@@ -108,6 +115,43 @@ export default function ProfilePage() {
         }
     }
 
+    const handleUploadFoto = async () => {
+        if (!profile) return
+        if (!fotoFile) {
+            alert('Pilih foto terlebih dahulu')
+            return
+        }
+
+        setIsUploadingFoto(true)
+        try {
+            const ext = fotoFile.name.split('.').pop() || 'jpg'
+            const fileName = `profiles/${profile.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+            const fotoUrl = await uploadImage({
+                bucket: 'SARPRAS',
+                path: fileName,
+                file: fotoFile,
+            })
+
+            const { error } = await supabase
+                .from('profiles')
+                .update({ foto_profil: fotoUrl })
+                .eq('id', profile.id)
+
+            if (error) throw error
+
+            setProfile({ ...profile, foto_profil: fotoUrl })
+            setFotoPreview(fotoUrl)
+            setHideFotoPreview(false)
+            setFotoFile(null)
+            alert('Foto profil berhasil diperbarui')
+        } catch (err) {
+            console.error('Error uploading foto profil:', err)
+            alert('Gagal mengunggah foto profil')
+        } finally {
+            setIsUploadingFoto(false)
+        }
+    }
+
     if (isLoading) {
         return <div className="p-8 text-center text-gray-500">Loading profile...</div>
     }
@@ -131,6 +175,43 @@ export default function ProfilePage() {
                         <CardDescription>Detail akun anda saat ini</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
+                        <div className="flex items-center gap-4">
+                            <div className="h-20 w-20 rounded-full border bg-gray-50 overflow-hidden flex items-center justify-center">
+                                {fotoPreview && !hideFotoPreview ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img src={fotoPreview} alt="Foto profil" className="h-full w-full object-cover" />
+                                ) : (
+                                    <User className="w-8 h-8 text-gray-400" />
+                                )}
+                            </div>
+                            <div className="flex-1 space-y-2">
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={(e) => setFotoFile(e.target.files?.[0] || null)}
+                                    className="block w-full text-sm text-gray-500 file:mr-4 file:rounded-full file:border-0 file:bg-gray-100 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-gray-700 hover:file:bg-gray-200"
+                                />
+                                <div className="flex gap-2">
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        onClick={handleUploadFoto}
+                                        disabled={isUploadingFoto || !fotoFile}
+                                    >
+                                        {isUploadingFoto ? 'Mengunggah...' : 'Simpan Foto'}
+                                    </Button>
+                                    {fotoPreview && (
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            onClick={() => setHideFotoPreview(true)}
+                                        >
+                                            Hapus dari tampilan
+                                        </Button>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
                         <div className="space-y-1">
                             <Label className="text-xs text-muted-foreground">Nama Lengkap</Label>
                             <p className="font-medium text-lg">{profile.nama_lengkap}</p>

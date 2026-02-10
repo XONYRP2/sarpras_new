@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Plus, Trash2, Edit, Search, X } from 'lucide-react'
 import { Input } from '@/components/ui/input'
+import { uploadImage } from '@/lib/storage'
 
 interface Sarpras {
     id: string
@@ -19,6 +20,7 @@ interface Sarpras {
     kondisi: string
     merk: string | null
     is_active?: boolean
+    foto?: string | null
     created_at: string
     updated_at: string
 }
@@ -73,6 +75,9 @@ export default function SarprasPage() {
         kondisi: 'baik',
         merk: '',
     })
+    const [fotoFile, setFotoFile] = useState<File | null>(null)
+    const [fotoPreview, setFotoPreview] = useState<string | null>(null)
+    const [hideFotoPreview, setHideFotoPreview] = useState(false)
     const [editData, setEditData] = useState({
         id: '',
         kode: '',
@@ -83,7 +88,41 @@ export default function SarprasPage() {
         stok_tersedia: '',
         kondisi: 'baik',
         merk: '',
+        foto: '',
     })
+    const [editFotoFile, setEditFotoFile] = useState<File | null>(null)
+    const [editFotoPreview, setEditFotoPreview] = useState<string | null>(null)
+    const [hideEditFotoPreview, setHideEditFotoPreview] = useState(false)
+    const [hiddenFotoIds, setHiddenFotoIds] = useState<Record<string, boolean>>({})
+    const [kategoriSync, setKategoriSync] = useState<string | null>(null)
+
+    const fetchKategoris = async () => {
+        const { data: allKategoris, error: kategorisError } = await supabase
+            .from('kategori')
+            .select('id, nama')
+
+        if (!kategorisError && allKategoris) {
+            const kategoriMap: Record<string, Kategori> = {}
+            allKategoris.forEach((k) => {
+                kategoriMap[k.id] = k
+            })
+            setKategoris(kategoriMap)
+        }
+    }
+
+    const fetchLokasis = async () => {
+        const { data: allLokasis, error: lokasisError } = await supabase
+            .from('lokasi')
+            .select('id, nama_lokasi')
+
+        if (!lokasisError && allLokasis) {
+            const lokasiMap: Record<string, Lokasi> = {}
+            allLokasis.forEach((l) => {
+                lokasiMap[l.id] = l
+            })
+            setLokasis(lokasiMap)
+        }
+    }
 
     useEffect(() => {
         const fetchData = async () => {
@@ -118,7 +157,7 @@ export default function SarprasPage() {
                 // Fetch all sarpras
                 const baseQuery = supabase
                     .from('sarpras')
-                    .select('id, kode, nama, kategori_id, lokasi_id, stok_total, stok_tersedia, kondisi, merk, is_active, created_at, updated_at')
+                    .select('id, kode, nama, kategori_id, lokasi_id, stok_total, stok_tersedia, kondisi, merk, is_active, foto, created_at, updated_at')
 
                 const { data: allSarpras, error: sarprasError } = showInactive
                     ? await baseQuery.order('created_at', { ascending: false })
@@ -127,31 +166,7 @@ export default function SarprasPage() {
                 if (!sarprasError && allSarpras) {
                     setSarprases(allSarpras)
 
-                    // Fetch all kategoris
-                    const { data: allKategoris, error: kategorisError } = await supabase
-                        .from('kategori')
-                        .select('id, nama')
-
-                    if (!kategorisError && allKategoris) {
-                        const kategoriMap: Record<string, Kategori> = {}
-                        allKategoris.forEach((k) => {
-                            kategoriMap[k.id] = k
-                        })
-                        setKategoris(kategoriMap)
-                    }
-
-                    // Fetch all lokasis
-                    const { data: allLokasis, error: lokasisError } = await supabase
-                        .from('lokasi')
-                        .select('id, nama_lokasi')
-
-                    if (!lokasisError && allLokasis) {
-                        const lokasiMap: Record<string, Lokasi> = {}
-                        allLokasis.forEach((l) => {
-                            lokasiMap[l.id] = l
-                        })
-                        setLokasis(lokasiMap)
-                    }
+                    await Promise.all([fetchKategoris(), fetchLokasis()])
                 }
             } catch (err) {
                 console.error('Error fetching data:', err)
@@ -163,6 +178,19 @@ export default function SarprasPage() {
 
         fetchData()
     }, [router, showInactive])
+
+    useEffect(() => {
+        const sync = () => {
+            const updatedAt = localStorage.getItem('kategoriUpdatedAt')
+            if (updatedAt && updatedAt !== kategoriSync) {
+                setKategoriSync(updatedAt)
+                fetchKategoris()
+            }
+        }
+        sync()
+        const id = setInterval(sync, 1500)
+        return () => clearInterval(id)
+    }, [kategoriSync])
 
     // Filter sarpras based on search term
     useEffect(() => {
@@ -258,23 +286,36 @@ export default function SarprasPage() {
 
         setIsSubmitting(true)
         try {
-            const { data: sarprasData, error: sarprasError } = await supabase
-                .from('sarpras')
-                .insert([
-                    {
-                        kode: kodeUnik,
-                        nama: formData.nama,
-                        kategori_id: formData.kategori_id || null,
-                        lokasi_id: formData.lokasi_id || null,
-                        stok_total: parseInt(formData.stok_total) || 0,
-                        stok_tersedia: parseInt(formData.stok_tersedia) || 0,
-                        kondisi: formData.kondisi,
-                        merk: formData.merk || null,
-                        is_active: true,
-                    },
-                ])
-                .select('id, kode, nama, kategori_id, lokasi_id, stok_total, stok_tersedia, kondisi, merk, is_active, created_at, updated_at')
-                .single()
+            const profileId = localStorage.getItem('profileId')
+            if (!profileId) {
+                alert('User tidak ditemukan')
+                return
+            }
+
+            let fotoUrl: string | null = null
+            if (fotoFile) {
+                const ext = fotoFile.name.split('.').pop() || 'jpg'
+                const fileName = `sarpras/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+                fotoUrl = await uploadImage({
+                    bucket: 'SARPRAS',
+                    path: fileName,
+                    file: fotoFile,
+                })
+            }
+
+            const { data: rpcData, error: sarprasError } = await supabase
+                .rpc('create_sarpras_with_initial_logs', {
+                    p_kode: kodeUnik,
+                    p_nama: formData.nama.trim(),
+                    p_kategori_id: formData.kategori_id || null,
+                    p_lokasi_id: formData.lokasi_id || null,
+                    p_stok_total: parseInt(formData.stok_total) || 0,
+                    p_stok_tersedia: parseInt(formData.stok_tersedia) || 0,
+                    p_kondisi: formData.kondisi,
+                    p_merk: formData.merk || null,
+                    p_foto: fotoUrl,
+                    p_created_by: profileId,
+                })
 
             if (sarprasError) {
                 console.error('Error creating sarpras:', sarprasError)
@@ -282,6 +323,7 @@ export default function SarprasPage() {
                 return
             }
 
+            const sarprasData = Array.isArray(rpcData) ? rpcData[0] : rpcData
             if (!sarprasData) {
                 console.error('No sarpras data returned')
                 alert('Gagal membuat sarpras: Tidak ada data yang dikembalikan')
@@ -301,6 +343,9 @@ export default function SarprasPage() {
                 kondisi: 'baik',
                 merk: '',
             })
+            setFotoFile(null)
+            setFotoPreview(null)
+            setHideFotoPreview(false)
             setIsModalOpen(false)
             alert('Sarpras berhasil ditambahkan')
         } catch (err) {
@@ -311,7 +356,8 @@ export default function SarprasPage() {
         }
     }
 
-    const openEditModal = (sarpras: Sarpras) => {
+    const openEditModal = async (sarpras: Sarpras) => {
+        await Promise.all([fetchKategoris(), fetchLokasis()])
         setEditData({
             id: sarpras.id,
             kode: sarpras.kode,
@@ -322,8 +368,17 @@ export default function SarprasPage() {
             stok_tersedia: String(sarpras.stok_tersedia ?? ''),
             kondisi: sarpras.kondisi || 'baik',
             merk: sarpras.merk || '',
+            foto: sarpras.foto || '',
         })
+        setEditFotoFile(null)
+        setEditFotoPreview(sarpras.foto || null)
+        setHideEditFotoPreview(false)
         setIsEditOpen(true)
+    }
+
+    const openAddModal = async () => {
+        await Promise.all([fetchKategoris(), fetchLokasis()])
+        setIsModalOpen(true)
     }
 
     const handleUpdateSarpras = async () => {
@@ -335,6 +390,17 @@ export default function SarprasPage() {
 
         setIsSubmitting(true)
         try {
+            let fotoUrl = editData.foto || null
+            if (editFotoFile) {
+                const ext = editFotoFile.name.split('.').pop() || 'jpg'
+                const fileName = `sarpras/${editData.id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+                fotoUrl = await uploadImage({
+                    bucket: 'SARPRAS',
+                    path: fileName,
+                    file: editFotoFile,
+                })
+            }
+
             const { data, error } = await supabase
                 .from('sarpras')
                 .update({
@@ -345,9 +411,10 @@ export default function SarprasPage() {
                     stok_tersedia: parseInt(editData.stok_tersedia) || 0,
                     kondisi: editData.kondisi,
                     merk: editData.merk.trim() || null,
+                    foto: fotoUrl,
                 })
                 .eq('id', editData.id)
-                .select('id, kode, nama, kategori_id, lokasi_id, stok_total, stok_tersedia, kondisi, merk, created_at, updated_at')
+                .select('id, kode, nama, kategori_id, lokasi_id, stok_total, stok_tersedia, kondisi, merk, foto, created_at, updated_at')
                 .single()
 
             if (error) {
@@ -393,9 +460,9 @@ export default function SarprasPage() {
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-3xl font-bold text-gray-900">Data Sarpras</h1>
-                    <p className="text-gray-600 mt-2">Kelola semua sarana dan prasarana</p>
+                    <p className="text-sm text-gray-600 mt-2">Kelola semua sarana dan prasarana</p>
                 </div>
-                <Button className="bg-gray-900 hover:bg-gray-800" onClick={() => setIsModalOpen(true)}>
+                <Button className="bg-gray-900 hover:bg-gray-800" onClick={openAddModal}>
                     <Plus className="w-4 h-4 mr-2" />
                     Tambah Sarpras
                 </Button>
@@ -432,21 +499,23 @@ export default function SarprasPage() {
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm">
                             <thead>
-                                <tr className="border-b border-gray-200">
-                                    <th className="text-left py-3 px-4 font-semibold text-gray-600">Kode</th>
-                                    <th className="text-left py-3 px-4 font-semibold text-gray-600">Nama</th>
-                                    <th className="text-left py-3 px-4 font-semibold text-gray-600">Kategori</th>
-                                    <th className="text-left py-3 px-4 font-semibold text-gray-600">Lokasi</th>
-                                    <th className="text-left py-3 px-4 font-semibold text-gray-600">Stok</th>
-                                    <th className="text-left py-3 px-4 font-semibold text-gray-600">Kondisi</th>
-                                    <th className="text-left py-3 px-4 font-semibold text-gray-600">Merk</th>
-                                    <th className="text-left py-3 px-4 font-semibold text-gray-600">Aksi</th>
+                                <tr className="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-500">
+                                    <th className="text-left py-3 px-4 font-semibold">Foto</th>
+                                    <th className="text-left py-3 px-4 font-semibold">Kode</th>
+                                    <th className="text-left py-3 px-4 font-semibold">Nama</th>
+                                    <th className="text-left py-3 px-4 font-semibold">Kategori</th>
+                                    <th className="text-left py-3 px-4 font-semibold">Lokasi</th>
+                                    <th className="text-left py-3 px-4 font-semibold">Stok</th>
+                                    <th className="text-left py-3 px-4 font-semibold">Kondisi</th>
+                                    <th className="text-left py-3 px-4 font-semibold">Merk</th>
+                                    <th className="text-left py-3 px-4 font-semibold">Status</th>
+                                    <th className="text-left py-3 px-4 font-semibold">Aksi</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {filteredSarprases.length === 0 ? (
                                     <tr>
-                                        <td colSpan={8} className="text-center py-8 text-gray-500">
+                                        <td colSpan={10} className="text-center py-8 text-gray-500">
                                             {searchTerm ? 'Tidak ada sarpras yang sesuai dengan pencarian' : 'Tidak ada sarpras ditemukan'}
                                         </td>
                                     </tr>
@@ -456,47 +525,63 @@ export default function SarprasPage() {
                                         const lokasi = lokasis[sarpras.lokasi_id || '']
                                         return (
                                             <tr key={sarpras.id} className="border-b border-gray-100 hover:bg-gray-50">
-                                                <td className="py-3 px-4 text-gray-900 font-medium">{sarpras.kode}</td>
-                                                <td className="py-3 px-4 text-gray-900 font-medium">
-                                                    <div className="flex items-center gap-2">
-                                                        <span>{sarpras.nama}</span>
-                                                        {sarpras.is_active === false && (
-                                                            <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600">
-                                                                Nonaktif
-                                                            </span>
+                                                <td className="py-3 px-4">
+                                                    <div className="h-11 w-11 rounded-md border bg-gray-50 overflow-hidden flex items-center justify-center">
+                                                        {sarpras.foto && !hiddenFotoIds[sarpras.id] ? (
+                                                            // eslint-disable-next-line @next/next/no-img-element
+                                                            <img src={sarpras.foto} alt={sarpras.nama} className="h-full w-full object-cover" />
+                                                        ) : (
+                                                            <span className="text-[10px] text-gray-400">No Photo</span>
                                                         )}
                                                     </div>
                                                 </td>
+                                                <td className="py-3 px-4 font-mono text-xs text-gray-700">{sarpras.kode}</td>
+                                                <td className="py-3 px-4 font-semibold text-gray-900">{sarpras.nama}</td>
                                                 <td className="py-3 px-4 text-gray-600">{kategori?.nama || '-'}</td>
                                                 <td className="py-3 px-4 text-gray-600">{lokasi?.nama_lokasi || '-'}</td>
                                                 <td className="py-3 px-4 text-gray-600">
-                                                    <span className="text-sm">
-                                                        {sarpras.stok_tersedia}/{sarpras.stok_total}
-                                                    </span>
+                                                    <div className="text-xs leading-5">Total: {sarpras.stok_total}</div>
+                                                    <div className="text-xs leading-5">Tersedia: {sarpras.stok_tersedia}</div>
                                                 </td>
-                                                <td className="py-3 px-4">
-                                                    <span
-                                                        className={`inline-block px-3 py-1 rounded-full text-xs font-semibold ${sarpras.kondisi === 'baik'
-                                                                ? 'bg-green-100 text-green-800'
-                                                                : sarpras.kondisi === 'rusak_ringan'
-                                                                    ? 'bg-yellow-100 text-yellow-800'
-                                                                    : 'bg-red-100 text-red-800'
-                                                            }`}
-                                                    >
-                                                        {sarpras.kondisi === 'baik'
-                                                            ? 'Baik'
-                                                            : sarpras.kondisi === 'rusak_ringan'
-                                                                ? 'Rusak Ringan'
-                                                                : 'Rusak Berat'}
-                                                    </span>
-                                                </td>
+                                                <td className="py-3 px-4 text-gray-600">{sarpras.kondisi || '-'}</td>
                                                 <td className="py-3 px-4 text-gray-600">{sarpras.merk || '-'}</td>
                                                 <td className="py-3 px-4">
-                                                    <div className="flex gap-2">
+                                                    {sarpras.is_active === false ? (
+                                                        <span className="rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-600">Nonaktif</span>
+                                                    ) : (
+                                                        <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-700">Aktif</span>
+                                                    )}
+                                                </td>
+                                                <td className="py-3 px-4">
+                                                    <div className="flex items-center gap-2">
+                                                        {sarpras.foto && !hiddenFotoIds[sarpras.id] && (
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                className="h-8 px-2 text-xs text-gray-600 hover:text-gray-800"
+                                                                onClick={() => setHiddenFotoIds((prev) => ({ ...prev, [sarpras.id]: true }))}
+                                                            >
+                                                                Sembunyikan Foto
+                                                            </Button>
+                                                        )}
+                                                        {sarpras.foto && hiddenFotoIds[sarpras.id] && (
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                className="h-8 px-2 text-xs text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                                                                onClick={() => setHiddenFotoIds((prev) => {
+                                                                    const next = { ...prev }
+                                                                    delete next[sarpras.id]
+                                                                    return next
+                                                                })}
+                                                            >
+                                                                Tampilkan Foto
+                                                            </Button>
+                                                        )}
                                                         <Button
                                                             variant="ghost"
                                                             size="sm"
-                                                            className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                                            className="h-8 w-8 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
                                                             onClick={() => openEditModal(sarpras)}
                                                             disabled={sarpras.is_active === false}
                                                         >
@@ -506,7 +591,7 @@ export default function SarprasPage() {
                                                             <Button
                                                                 variant="ghost"
                                                                 size="sm"
-                                                                className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                                                                className="h-8 px-2 text-xs text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
                                                                 onClick={() => handleRestoreSarpras(sarpras.id)}
                                                             >
                                                                 Pulihkan
@@ -515,7 +600,7 @@ export default function SarprasPage() {
                                                             <Button
                                                                 variant="ghost"
                                                                 size="sm"
-                                                                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                                                className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
                                                                 onClick={() => handleDeleteSarpras(sarpras.id)}
                                                             >
                                                                 <Trash2 className="w-4 h-4" />
@@ -645,6 +730,44 @@ export default function SarprasPage() {
                                     onChange={(e) => setFormData({ ...formData, merk: e.target.value })}
                                 />
                             </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Foto Aset (Opsional)</label>
+                                <div className="flex items-center gap-3">
+                                    <div className="h-20 w-20 rounded-lg border bg-gray-50 flex items-center justify-center overflow-hidden">
+                                        {fotoPreview && !hideFotoPreview ? (
+                                            // eslint-disable-next-line @next/next/no-img-element
+                                            <img src={fotoPreview} alt="Preview" className="h-full w-full object-cover" />
+                                        ) : (
+                                            <span className="text-xs text-gray-400">No Photo</span>
+                                        )}
+                                    </div>
+                                    <div className="flex-1 space-y-2">
+                                        <input
+                                            type="file"
+                                            accept="image/*"
+                                            onChange={(e) => {
+                                                const file = e.target.files?.[0] || null
+                                                setFotoFile(file)
+                                                if (file) {
+                                                    const url = URL.createObjectURL(file)
+                                                    setFotoPreview(url)
+                                                    setHideFotoPreview(false)
+                                                }
+                                            }}
+                                            className="block w-full text-sm text-gray-500 file:mr-4 file:rounded-full file:border-0 file:bg-gray-100 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-gray-700 hover:file:bg-gray-200"
+                                        />
+                                        {fotoPreview && (
+                                            <button
+                                                type="button"
+                                                className="text-xs font-semibold text-gray-500 hover:text-gray-700"
+                                                onClick={() => setHideFotoPreview(true)}
+                                            >
+                                                Hapus foto dari tampilan
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
                             <div className="flex gap-2 pt-4">
                                 <Button
                                     variant="ghost"
@@ -770,6 +893,44 @@ export default function SarprasPage() {
                                     value={editData.merk}
                                     onChange={(e) => setEditData({ ...editData, merk: e.target.value })}
                                 />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Foto Aset (Opsional)</label>
+                                <div className="flex items-center gap-3">
+                                    <div className="h-20 w-20 rounded-lg border bg-gray-50 flex items-center justify-center overflow-hidden">
+                                        {editFotoPreview && !hideEditFotoPreview ? (
+                                            // eslint-disable-next-line @next/next/no-img-element
+                                            <img src={editFotoPreview} alt="Preview" className="h-full w-full object-cover" />
+                                        ) : (
+                                            <span className="text-xs text-gray-400">No Photo</span>
+                                        )}
+                                    </div>
+                                    <div className="flex-1 space-y-2">
+                                        <input
+                                            type="file"
+                                            accept="image/*"
+                                            onChange={(e) => {
+                                                const file = e.target.files?.[0] || null
+                                                setEditFotoFile(file)
+                                                if (file) {
+                                                    const url = URL.createObjectURL(file)
+                                                    setEditFotoPreview(url)
+                                                    setHideEditFotoPreview(false)
+                                                }
+                                            }}
+                                            className="block w-full text-sm text-gray-500 file:mr-4 file:rounded-full file:border-0 file:bg-gray-100 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-gray-700 hover:file:bg-gray-200"
+                                        />
+                                        {editFotoPreview && (
+                                            <button
+                                                type="button"
+                                                className="text-xs font-semibold text-gray-500 hover:text-gray-700"
+                                                onClick={() => setHideEditFotoPreview(true)}
+                                            >
+                                                Hapus foto dari tampilan
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
                             <div className="flex gap-2 pt-4">
                                 <Button
