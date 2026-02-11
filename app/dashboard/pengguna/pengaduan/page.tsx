@@ -15,12 +15,25 @@ interface Sarpras {
     kode: string
 }
 
+interface Pengaduan {
+    id: string
+    judul: string
+    lokasi: string
+    sarpras_id: string | null
+    prioritas: string
+    deskripsi: string
+    status: string
+    catatan: string | null
+    created_at: string
+}
+
 export default function PengaduanPage() {
     const router = useRouter()
     const [sarprases, setSarprases] = useState<Record<string, Sarpras>>({})
     const [isLoading, setIsLoading] = useState(true)
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [userId, setUserId] = useState<string | null>(null)
+    const [myPengaduan, setMyPengaduan] = useState<Pengaduan[]>([])
     const [formData, setFormData] = useState({
         judul: '',
         lokasi: '',
@@ -60,11 +73,18 @@ export default function PengaduanPage() {
 
                 setUserId(profileId)
 
-                const { data: allSarprases, error: sarprasesError } = await supabase
-                    .from('sarpras')
-                    .select('id, nama, kode')
-                    .eq('is_active', true)
-                    .order('nama', { ascending: true })
+                const [{ data: allSarprases, error: sarprasesError }, { data: pengaduanData }] = await Promise.all([
+                    supabase
+                        .from('sarpras')
+                        .select('id, nama, kode')
+                        .eq('is_active', true)
+                        .order('nama', { ascending: true }),
+                    supabase
+                        .from('pengaduan')
+                        .select('id, judul, lokasi, sarpras_id, prioritas, deskripsi, status, catatan, created_at')
+                        .eq('user_id', profileId)
+                        .order('created_at', { ascending: false }),
+                ])
 
                 if (!sarprasesError && allSarprases) {
                     const sarprasMap: Record<string, Sarpras> = {}
@@ -72,6 +92,9 @@ export default function PengaduanPage() {
                         sarprasMap[s.id] = s
                     })
                     setSarprases(sarprasMap)
+                }
+                if (pengaduanData) {
+                    setMyPengaduan(pengaduanData)
                 }
             } catch (err) {
                 console.error('Error fetching data:', err)
@@ -153,11 +176,47 @@ export default function PengaduanPage() {
             setFotoFile(null)
             setHideFotoPreview(false)
             alert('Pengaduan berhasil dikirim')
+            const { data: pengaduanData } = await supabase
+                .from('pengaduan')
+                .select('id, judul, lokasi, sarpras_id, prioritas, deskripsi, status, catatan, created_at')
+                .eq('user_id', userId)
+                .order('created_at', { ascending: false })
+            if (pengaduanData) setMyPengaduan(pengaduanData)
         } catch (err) {
             console.error('Error adding pengaduan:', err)
             alert(`Terjadi kesalahan saat menambahkan pengaduan: ${err instanceof Error ? err.message : String(err)}`)
         } finally {
             setIsSubmitting(false)
+        }
+    }
+
+    const getStatusStyle = (status: string) => {
+        switch (status) {
+            case 'menunggu':
+                return 'bg-yellow-100 text-yellow-800'
+            case 'diproses':
+                return 'bg-blue-100 text-blue-800'
+            case 'selesai':
+                return 'bg-green-100 text-green-800'
+            case 'ditolak':
+                return 'bg-red-100 text-red-800'
+            default:
+                return 'bg-gray-100 text-gray-700'
+        }
+    }
+
+    const getStatusLabel = (status: string) => {
+        switch (status) {
+            case 'menunggu':
+                return 'Menunggu'
+            case 'diproses':
+                return 'Diproses'
+            case 'selesai':
+                return 'Selesai'
+            case 'ditolak':
+                return 'Ditolak'
+            default:
+                return status
         }
     }
 
@@ -281,6 +340,52 @@ export default function PengaduanPage() {
                             {isSubmitting ? 'Mengirim...' : 'Kirim Pengaduan'}
                         </Button>
                     </div>
+                </CardContent>
+            </Card>
+
+            <Card className="shadow-sm">
+                <CardHeader>
+                    <CardTitle>Riwayat & Feedback Pengaduan</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    {myPengaduan.length === 0 ? (
+                        <div className="text-sm text-gray-500">Belum ada pengaduan yang dikirim.</div>
+                    ) : (
+                        <div className="space-y-4">
+                            {myPengaduan.map((item) => {
+                                const sarpras = item.sarpras_id ? sarprases[item.sarpras_id] : null
+                                return (
+                                    <div key={item.id} className="rounded-xl border border-gray-100 bg-white p-4">
+                                        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                                            <div>
+                                                <div className="text-sm font-semibold text-gray-900">{item.judul}</div>
+                                                <div className="text-xs text-gray-500 mt-1">
+                                                    {new Date(item.created_at).toLocaleDateString('id-ID')} • {item.lokasi}
+                                                </div>
+                                                {sarpras && (
+                                                    <div className="text-xs text-gray-500 mt-1">
+                                                        {sarpras.kode} - {sarpras.nama}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${getStatusStyle(item.status)}`}>
+                                                {getStatusLabel(item.status)}
+                                            </span>
+                                        </div>
+                                        <div className="mt-3 text-sm text-gray-700 whitespace-pre-wrap">
+                                            {item.deskripsi}
+                                        </div>
+                                        <div className="mt-3 rounded-lg border border-blue-50 bg-blue-50/40 p-3">
+                                            <div className="text-xs font-semibold text-blue-700">Feedback Admin/Petugas</div>
+                                            <div className="mt-1 text-sm text-gray-700 whitespace-pre-wrap">
+                                                {item.catatan || 'Belum ada feedback.'}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )
+                            })}
+                        </div>
+                    )}
                 </CardContent>
             </Card>
         </div>

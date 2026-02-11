@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Eye, Search, MoreVertical, X, CheckCircle, XCircle, FileText } from 'lucide-react'
+import { Eye, Search, MoreVertical, X, CheckCircle, XCircle, FileText, ClipboardList } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import {
     DropdownMenu,
@@ -412,6 +412,11 @@ export default function PeminjamanPage() {
                                                             <FileText className="mr-2 h-4 w-4 opacity-70" /> Cetak Bukti
                                                         </DropdownMenuItem>
                                                     )}
+                                                    {item.status === 'disetujui' && (
+                                                        <DropdownMenuItem onClick={() => router.push(`/dashboard/admin/inspeksi-awal?loan=${item.id}`)}>
+                                                            <ClipboardList className="mr-2 h-4 w-4 opacity-70" /> Inspeksi Awal
+                                                        </DropdownMenuItem>
+                                                    )}
                                                     {item.status === 'menunggu' && (
                                                         <>
                                                             <DropdownMenuItem onClick={() => handleApprove(item.id)} disabled={!!actionLoading}>
@@ -576,3 +581,4 @@ export default function PeminjamanPage() {
         </div>
     )
 }
+

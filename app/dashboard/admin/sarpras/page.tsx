@@ -100,6 +100,7 @@ export default function SarprasPage() {
         const { data: allKategoris, error: kategorisError } = await supabase
             .from('kategori')
             .select('id, nama')
+            .eq('is_active', true)
 
         if (!kategorisError && allKategoris) {
             const kategoriMap: Record<string, Kategori> = {}

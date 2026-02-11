@@ -316,6 +316,34 @@ export default function AdminDashboard() {
                 </div>
               </button>
               <button
+                className="w-full rounded-2xl border border-slate-100 bg-white p-4 text-left shadow-sm transition hover:border-indigo-200 hover:bg-indigo-50"
+                onClick={() => router.push('/dashboard/admin/template-checklist')}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="rounded-lg bg-indigo-100 p-2 text-indigo-600">
+                    <ClipboardList className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">Template Checklist</div>
+                    <div className="text-xs text-slate-500">Atur checklist per kategori</div>
+                  </div>
+                </div>
+              </button>
+              <button
+                className="w-full rounded-2xl border border-slate-100 bg-white p-4 text-left shadow-sm transition hover:border-cyan-200 hover:bg-cyan-50"
+                onClick={() => router.push('/dashboard/admin/inspeksi-awal')}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="rounded-lg bg-cyan-100 p-2 text-cyan-700">
+                    <ClipboardList className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">Inspeksi Awal</div>
+                    <div className="text-xs text-slate-500">Isi kondisi awal sebelum dipinjam</div>
+                  </div>
+                </div>
+              </button>
+              <button
                 className="w-full rounded-2xl border border-slate-100 bg-white p-4 text-left shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50"
                 onClick={() => router.push('/dashboard/admin/pengembalian')}
               >
@@ -365,3 +393,4 @@ export default function AdminDashboard() {
     </div>
   )
 }
+

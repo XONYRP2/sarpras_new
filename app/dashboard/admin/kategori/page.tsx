@@ -103,6 +103,21 @@ export default function KategoriPage() {
     const handleDeleteKategori = async (id: string) => {
         if (!confirm('Apakah Anda yakin ingin menghapus kategori ini?')) return
 
+        const { count, error: countError } = await supabase
+            .from('sarpras')
+            .select('id', { count: 'exact', head: true })
+            .eq('kategori_id', id)
+
+        if (countError) {
+            alert('Gagal mengecek penggunaan kategori')
+            return
+        }
+
+        if ((count || 0) > 0) {
+            alert('Kategori tidak dapat dihapus karena sudah digunakan pada sarpras.')
+            return
+        }
+
         const { data, error } = await supabase
             .from('kategori')
             .update({ is_active: false })

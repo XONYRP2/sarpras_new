@@ -1,11 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Plus, Trash2, Edit, Search } from 'lucide-react'
+import { Plus, Trash2, Search, ClipboardCheck, X } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 
 interface Pengaduan {
@@ -19,6 +19,7 @@ interface Pengaduan {
     kategori_kerusakan: string | null
     prioritas: string
     status: string
+    catatan?: string | null
     created_at: string
     updated_at: string
 }
@@ -46,6 +47,11 @@ export default function PengaduanPage() {
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [hiddenFotoIds, setHiddenFotoIds] = useState<Record<string, boolean>>({})
+    const [isActionOpen, setIsActionOpen] = useState(false)
+    const [actionTarget, setActionTarget] = useState<Pengaduan | null>(null)
+    const [actionStatus, setActionStatus] = useState('menunggu')
+    const [actionNote, setActionNote] = useState('')
+    const [isUpdating, setIsUpdating] = useState(false)
     const [formData, setFormData] = useState({
         user_id: '',
         judul: '',
@@ -152,6 +158,57 @@ export default function PengaduanPage() {
         })
         setFilteredPengaduans(filtered)
     }, [searchTerm, pengaduans, profiles, sarprases])
+
+    const statusOptions = useMemo(() => ([
+        { value: 'menunggu', label: 'Menunggu' },
+        { value: 'diproses', label: 'Diproses' },
+        { value: 'selesai', label: 'Selesai' },
+        { value: 'ditolak', label: 'Ditolak' },
+    ]), [])
+
+    const openActionModal = (pengaduan: Pengaduan) => {
+        setActionTarget(pengaduan)
+        setActionStatus(pengaduan.status)
+        setActionNote(pengaduan.catatan || '')
+        setIsActionOpen(true)
+    }
+
+    const handleUpdateStatus = async () => {
+        if (!actionTarget) {
+            return
+        }
+
+        setIsUpdating(true)
+        try {
+            const { data, error } = await supabase
+                .from('pengaduan')
+                .update({ status: actionStatus, catatan: actionNote || null })
+                .eq('id', actionTarget.id)
+                .select('*')
+                .single()
+
+            if (error) {
+                console.error('Error updating status:', error)
+                alert('Gagal memperbarui progres')
+                return
+            }
+
+            if (!data) {
+                alert('Gagal memperbarui progres: data tidak ditemukan')
+                return
+            }
+
+            setPengaduans((prev) => prev.map((p) => (p.id === data.id ? data : p)))
+            setIsActionOpen(false)
+            setActionTarget(null)
+            alert('Progres berhasil diperbarui')
+        } catch (err) {
+            console.error('Error updating status:', err)
+            alert('Terjadi kesalahan saat memperbarui progres')
+        } finally {
+            setIsUpdating(false)
+        }
+    }
 
     const handleDeletePengaduan = async (pengaduanId: string) => {
         if (!window.confirm('Apakah Anda yakin ingin menghapus pengaduan ini?')) {
@@ -380,8 +437,10 @@ export default function PengaduanPage() {
                                                             variant="ghost"
                                                             size="sm"
                                                             className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                                            onClick={() => openActionModal(pengaduan)}
                                                         >
-                                                            <Edit className="w-4 h-4" />
+                                                            <ClipboardCheck className="w-4 h-4 mr-1" />
+                                                            Progres
                                                         </Button>
                                                         <Button
                                                             variant="ghost"
@@ -538,6 +597,83 @@ export default function PengaduanPage() {
                                     disabled={isSubmitting}
                                 >
                                     {isSubmitting ? 'Menyimpan...' : 'Simpan'}
+                                </Button>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+            )}
+
+            {isActionOpen && actionTarget && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                    <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto">
+                        <CardHeader className="flex flex-row items-start justify-between">
+                            <div>
+                                <CardTitle>Update Progres Pengaduan</CardTitle>
+                                <CardDescription>Ubah status penanganan untuk menindaklanjuti pengaduan.</CardDescription>
+                            </div>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-gray-500 hover:text-gray-700"
+                                onClick={() => {
+                                    setIsActionOpen(false)
+                                    setActionTarget(null)
+                                }}
+                            >
+                                <X className="w-4 h-4" />
+                            </Button>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                            <div className="rounded-lg border border-gray-100 bg-gray-50 p-4 text-sm text-gray-700 space-y-2">
+                                <div className="font-semibold text-gray-900">{actionTarget.judul}</div>
+                                <div className="text-xs text-gray-500">{actionTarget.lokasi || 'Lokasi tidak tersedia'}</div>
+                                <div className="text-sm text-gray-700">{actionTarget.deskripsi}</div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-gray-700">Status Penanganan</label>
+                                <select
+                                    value={actionStatus}
+                                    onChange={(e) => setActionStatus(e.target.value)}
+                                    className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gray-900"
+                                >
+                                    {statusOptions.map((option) => (
+                                        <option key={option.value} value={option.value}>
+                                            {option.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-gray-700">Catatan</label>
+                                <textarea
+                                    value={actionNote}
+                                    onChange={(e) => setActionNote(e.target.value)}
+                                    className="w-full min-h-[100px] rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gray-900"
+                                    placeholder="Tambahkan catatan penanganan..."
+                                />
+                            </div>
+
+                            <div className="flex gap-2 pt-2">
+                                <Button
+                                    variant="ghost"
+                                    className="flex-1"
+                                    onClick={() => {
+                                        setIsActionOpen(false)
+                                        setActionTarget(null)
+                                        setActionNote('')
+                                    }}
+                                    disabled={isUpdating}
+                                >
+                                    Batal
+                                </Button>
+                                <Button
+                                    className="flex-1 bg-gray-900 hover:bg-gray-800"
+                                    onClick={handleUpdateStatus}
+                                    disabled={isUpdating}
+                                >
+                                    {isUpdating ? 'Menyimpan...' : 'Simpan Progres'}
                                 </Button>
                             </div>
                         </CardContent>

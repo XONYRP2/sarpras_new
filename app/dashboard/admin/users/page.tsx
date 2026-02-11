@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Plus, Trash2, Edit, Search } from 'lucide-react'
+import { Plus, Trash2, Edit, Search, Key, Eye, EyeOff } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { logActivity } from '@/lib/activity'
 import {
@@ -37,6 +37,13 @@ export default function UsersPage() {
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [showInactive, setShowInactive] = useState(false)
     const [editingUser, setEditingUser] = useState<User | null>(null)
+    const [passwordModalOpen, setPasswordModalOpen] = useState(false)
+    const [passwordTarget, setPasswordTarget] = useState<User | null>(null)
+    const [passwordForm, setPasswordForm] = useState({ oldPassword: '', newPassword: '', confirmPassword: '' })
+    const [isResettingPassword, setIsResettingPassword] = useState(false)
+    const [showOldPassword, setShowOldPassword] = useState(false)
+    const [showNewPassword, setShowNewPassword] = useState(false)
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false)
 
     // Form state
     const [formData, setFormData] = useState({
@@ -308,6 +315,60 @@ export default function UsersPage() {
         }
     }
 
+    const handleOpenResetPassword = (user: User) => {
+        setPasswordTarget(user)
+        setPasswordForm({ oldPassword: '', newPassword: '', confirmPassword: '' })
+        setPasswordModalOpen(true)
+    }
+
+    const handleResetPassword = async () => {
+        if (!passwordTarget) return
+        if (!passwordForm.newPassword || !passwordForm.confirmPassword) {
+            alert('Mohon isi password baru dan konfirmasi')
+            return
+        }
+        if (passwordForm.newPassword.length < 6) {
+            alert('Password baru minimal 6 karakter')
+            return
+        }
+        if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+            alert('Konfirmasi password tidak cocok')
+            return
+        }
+
+        setIsResettingPassword(true)
+        try {
+            const adminId = localStorage.getItem('profileId')
+            if (!adminId) {
+                alert('User tidak ditemukan, silakan login ulang')
+                return
+            }
+
+            const { data, error } = await supabase.rpc('admin_reset_user_password', {
+                p_admin_id: adminId,
+                p_profile_id: passwordTarget.id,
+                p_new_password: passwordForm.newPassword,
+            })
+
+            if (error) throw error
+
+            if (data && data.success === false) {
+                alert('Gagal: ' + (data.error || 'Tidak bisa reset password'))
+                return
+            }
+
+            alert(`Password untuk ${passwordTarget.username} berhasil direset`)
+            setPasswordModalOpen(false)
+            setPasswordTarget(null)
+            setPasswordForm({ oldPassword: '', newPassword: '', confirmPassword: '' })
+        } catch (err) {
+            console.error('Error resetting password:', err)
+            alert('Gagal reset password: ' + (err as Error).message)
+        } finally {
+            setIsResettingPassword(false)
+        }
+    }
+
     if (isLoading) {
         return <div className="p-8 text-center text-gray-500">Loading users...</div>
     }
@@ -422,6 +483,16 @@ export default function UsersPage() {
                                                         disabled={user.is_active === false}
                                                     >
                                                         <Edit className="w-4 h-4" />
+                                                    </Button>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="text-amber-600 hover:text-amber-800 hover:bg-amber-50"
+                                                        onClick={() => handleOpenResetPassword(user)}
+                                                        disabled={user.is_active === false}
+                                                        title="Reset Password"
+                                                    >
+                                                        <Key className="w-4 h-4" />
                                                     </Button>
                                                     {user.is_active === false ? (
                                                         <Button
@@ -542,6 +613,114 @@ export default function UsersPage() {
                                     onClick={editingUser ? handleUpdateUser : handleAddUser}
                                 >
                                     {isSubmitting ? 'Menyimpan...' : 'Simpan'}
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal for Resetting Password */}
+            {passwordModalOpen && passwordTarget && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6 animate-in fade-in zoom-in duration-200">
+                        <div className="flex items-center justify-between mb-4">
+                            <h2 className="text-xl font-bold">Reset Password</h2>
+                            <button
+                                onClick={() => {
+                                    setPasswordModalOpen(false)
+                                    setPasswordTarget(null)
+                                }}
+                                className="text-gray-400 hover:text-gray-600"
+                            >
+                                &times;
+                            </button>
+                        </div>
+
+                        <div className="space-y-2 mb-4">
+                            <p className="text-sm text-gray-600">User: <span className="font-medium">{passwordTarget.username}</span></p>
+                            <p className="text-xs text-gray-500">Masukkan password baru untuk user ini.</p>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium">Password Lama (Opsional)</label>
+                                <div className="relative">
+                                    <Input
+                                        type={showOldPassword ? 'text' : 'password'}
+                                        value={passwordForm.oldPassword}
+                                        onChange={(e) => setPasswordForm({ ...passwordForm, oldPassword: e.target.value })}
+                                        placeholder="Masukkan password lama jika diketahui"
+                                        className="pr-10"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowOldPassword((prev) => !prev)}
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-gray-500 hover:text-gray-700"
+                                        aria-label={showOldPassword ? 'Sembunyikan password lama' : 'Tampilkan password lama'}
+                                    >
+                                        {showOldPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium">Password Baru</label>
+                                <div className="relative">
+                                    <Input
+                                        type={showNewPassword ? 'text' : 'password'}
+                                        value={passwordForm.newPassword}
+                                        onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                                        placeholder="Minimal 6 karakter"
+                                        className="pr-10"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowNewPassword((prev) => !prev)}
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-gray-500 hover:text-gray-700"
+                                        aria-label={showNewPassword ? 'Sembunyikan password baru' : 'Tampilkan password baru'}
+                                    >
+                                        {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium">Konfirmasi Password Baru</label>
+                                <div className="relative">
+                                    <Input
+                                        type={showConfirmPassword ? 'text' : 'password'}
+                                        value={passwordForm.confirmPassword}
+                                        onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+                                        placeholder="Ulangi password baru"
+                                        className="pr-10"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowConfirmPassword((prev) => !prev)}
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-gray-500 hover:text-gray-700"
+                                        aria-label={showConfirmPassword ? 'Sembunyikan konfirmasi password' : 'Tampilkan konfirmasi password'}
+                                    >
+                                        {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="flex gap-3 pt-4">
+                                <Button
+                                    variant="outline"
+                                    className="flex-1"
+                                    onClick={() => {
+                                        setPasswordModalOpen(false)
+                                        setPasswordTarget(null)
+                                    }}
+                                >
+                                    Batal
+                                </Button>
+                                <Button
+                                    className="flex-1"
+                                    disabled={isResettingPassword}
+                                    onClick={handleResetPassword}
+                                >
+                                    {isResettingPassword ? 'Menyimpan...' : 'Simpan'}
                                 </Button>
                             </div>
                         </div>

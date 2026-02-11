@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { LogOut, User, Shield, Key } from 'lucide-react'
+import { LogOut, User, Shield, Key, Eye, EyeOff } from 'lucide-react'
 
 interface Profile {
     id: string
@@ -29,6 +29,9 @@ export default function ProfilePage() {
         newPassword: '',
         confirmPassword: ''
     })
+    const [showOldPassword, setShowOldPassword] = useState(false)
+    const [showNewPassword, setShowNewPassword] = useState(false)
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false)
     const [isChangingPassword, setIsChangingPassword] = useState(false)
     const [fotoFile, setFotoFile] = useState<File | null>(null)
     const [fotoPreview, setFotoPreview] = useState<string | null>(null)
@@ -84,10 +87,14 @@ export default function ProfilePage() {
 
         try {
             const profileId = localStorage.getItem('profileId')
+            if (!profileId) {
+                alert('User tidak ditemukan, silakan login ulang')
+                return
+            }
 
             // Call the RPC function to change password
             // Assumption: User needs to create this function in Supabase
-            const { data, error } = await supabase.rpc('change_own_password', {
+            const { data, error } = await supabase.rpc('change_user_password', {
                 p_profile_id: profileId,
                 p_old_password: passwords.oldPassword,
                 p_new_password: passwords.newPassword
@@ -256,36 +263,69 @@ export default function ProfilePage() {
                         <form onSubmit={handleChangePassword} className="space-y-4">
                             <div className="space-y-2">
                                 <Label htmlFor="oldPassword">Password Lama</Label>
-                                <Input
-                                    id="oldPassword"
-                                    type="password"
-                                    placeholder="Masukkan password saat ini"
-                                    value={passwords.oldPassword}
-                                    onChange={(e) => setPasswords({ ...passwords, oldPassword: e.target.value })}
-                                    required
-                                />
+                                <div className="relative">
+                                    <Input
+                                        id="oldPassword"
+                                        type={showOldPassword ? 'text' : 'password'}
+                                        placeholder="Masukkan password saat ini"
+                                        value={passwords.oldPassword}
+                                        onChange={(e) => setPasswords({ ...passwords, oldPassword: e.target.value })}
+                                        required
+                                        className="pr-10"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowOldPassword((prev) => !prev)}
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-gray-500 hover:text-gray-700"
+                                        aria-label={showOldPassword ? 'Sembunyikan password lama' : 'Tampilkan password lama'}
+                                    >
+                                        {showOldPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                    </button>
+                                </div>
                             </div>
                             <div className="space-y-2">
                                 <Label htmlFor="newPassword">Password Baru</Label>
-                                <Input
-                                    id="newPassword"
-                                    type="password"
-                                    placeholder="Minimal 6 karakter"
-                                    value={passwords.newPassword}
-                                    onChange={(e) => setPasswords({ ...passwords, newPassword: e.target.value })}
-                                    required
-                                />
+                                <div className="relative">
+                                    <Input
+                                        id="newPassword"
+                                        type={showNewPassword ? 'text' : 'password'}
+                                        placeholder="Minimal 6 karakter"
+                                        value={passwords.newPassword}
+                                        onChange={(e) => setPasswords({ ...passwords, newPassword: e.target.value })}
+                                        required
+                                        className="pr-10"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowNewPassword((prev) => !prev)}
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-gray-500 hover:text-gray-700"
+                                        aria-label={showNewPassword ? 'Sembunyikan password baru' : 'Tampilkan password baru'}
+                                    >
+                                        {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                    </button>
+                                </div>
                             </div>
                             <div className="space-y-2">
                                 <Label htmlFor="confirmPassword">Konfirmasi Password Baru</Label>
-                                <Input
-                                    id="confirmPassword"
-                                    type="password"
-                                    placeholder="Ulangi password baru"
-                                    value={passwords.confirmPassword}
-                                    onChange={(e) => setPasswords({ ...passwords, confirmPassword: e.target.value })}
-                                    required
-                                />
+                                <div className="relative">
+                                    <Input
+                                        id="confirmPassword"
+                                        type={showConfirmPassword ? 'text' : 'password'}
+                                        placeholder="Ulangi password baru"
+                                        value={passwords.confirmPassword}
+                                        onChange={(e) => setPasswords({ ...passwords, confirmPassword: e.target.value })}
+                                        required
+                                        className="pr-10"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowConfirmPassword((prev) => !prev)}
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-gray-500 hover:text-gray-700"
+                                        aria-label={showConfirmPassword ? 'Sembunyikan konfirmasi password' : 'Tampilkan konfirmasi password'}
+                                    >
+                                        {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                    </button>
+                                </div>
                             </div>
                             <Button type="submit" className="w-full bg-gray-900 hover:bg-gray-800" disabled={isChangingPassword}>
                                 {isChangingPassword ? 'Memproses...' : 'Simpan Password Baru'}

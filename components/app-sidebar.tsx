@@ -1,4 +1,3 @@
-
 "use client"
 
 import * as React from "react"
@@ -7,15 +6,12 @@ import {
   AlertCircle,
   ArrowDownLeft,
   ArrowUpRight,
-  CheckCircle,
-  ChevronRight,
   ClipboardList,
   FileText,
   Layers,
   LayoutDashboard,
   MapPin,
   Package,
-  Settings,
   Tags,
   Users,
 } from "lucide-react"
@@ -83,6 +79,16 @@ const adminNav = [
     icon: ArrowUpRight,
   },
   {
+    title: "Template Checklist",
+    url: "/dashboard/admin/template-checklist",
+    icon: Layers,
+  },
+  {
+    title: "Inspeksi Awal",
+    url: "/dashboard/admin/inspeksi-awal",
+    icon: ClipboardList,
+  },
+  {
     title: "Pengembalian",
     url: "/dashboard/admin/pengembalian",
     icon: ArrowDownLeft,
@@ -90,6 +96,11 @@ const adminNav = [
   {
     title: "Pengaduan",
     url: "/dashboard/admin/pengaduan",
+    icon: AlertCircle,
+  },
+  {
+    title: "Riwayat Pengembalian",
+    url: "/dashboard/admin/riwayat",
     icon: AlertCircle,
   },
   {
@@ -121,6 +132,11 @@ const petugasNav = [
     icon: ArrowUpRight,
   },
   {
+    title: "Inspeksi Awal",
+    url: "/dashboard/petugas/inspeksi-awal",
+    icon: ClipboardList,
+  },
+  {
     title: "Pengembalian",
     url: "/dashboard/petugas/pengembalian",
     icon: ArrowDownLeft,
@@ -130,7 +146,6 @@ const petugasNav = [
     url: "/dashboard/petugas/pengaduan",
     icon: AlertCircle,
   },
-  // Add more as needed
 ]
 
 const penggunaNav = [
@@ -154,7 +169,6 @@ const penggunaNav = [
     url: "/dashboard/pengguna/pengaduan",
     icon: AlertCircle,
   },
-  // Add more as needed
 ]
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {

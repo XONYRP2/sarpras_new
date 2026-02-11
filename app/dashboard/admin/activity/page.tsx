@@ -15,6 +15,7 @@ interface ActivityLog {
     description: string;
     ip_address: string | null;
     user_agent: string | null;
+    client_app: string | null;
     data_before: Record<string, any> | null;
     data_after: Record<string, any> | null;
     created_at: string;
@@ -397,6 +398,12 @@ export default function ActivityLogPage() {
                                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
                                         Deskripsi
                                     </th>
+                                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                        IP
+                                    </th>
+                                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                        App
+                                    </th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
@@ -419,6 +426,8 @@ export default function ActivityLogPage() {
                                             </span>
                                         </td>
                                         <td className="px-6 py-4 text-sm text-gray-700 max-w-xs truncate">{log.description}</td>
+                                        <td className="px-6 py-4 text-sm text-gray-700">{log.ip_address || '-'}</td>
+                                        <td className="px-6 py-4 text-sm text-gray-700">{log.client_app || '-'}</td>
                                     </tr>
                                 ))}
                             </tbody>

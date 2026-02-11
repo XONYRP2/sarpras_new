@@ -53,15 +53,31 @@ interface Profile {
 interface VerificationSection {
     id: number
     jumlah: number
-    kondisi: 'baik' | 'cacat' | 'rusak' | 'hilang'
+    kondisi: 'baik' | 'rusak_ringan' | 'rusak_berat' | 'hilang'
     catatan: string
     file?: File | null
+    previewUrl?: string | null
+}
+
+interface PreBorrowInspectionItem {
+    item_label: string
+    kondisi: string
+    catatan: string | null
+}
+
+interface PreBorrowInspection {
+    id: string
+    kondisi_awal: string
+    catatan: string | null
+    foto: string | null
+    inspected_at: string
+    pre_borrow_inspection_item?: PreBorrowInspectionItem[]
 }
 
 const CONDITIONS = [
     { id: 'baik', label: 'BAIK', color: 'bg-green-600 text-white border-green-600 hover:bg-green-700', icon: Check },
-    { id: 'cacat', label: 'CACAT', color: 'bg-yellow-100 text-yellow-700 border-yellow-300 hover:bg-yellow-200', icon: AlertTriangle },
-    { id: 'rusak', label: 'RUSAK', color: 'bg-orange-100 text-orange-700 border-orange-300 hover:bg-orange-200', icon: X },
+    { id: 'rusak_ringan', label: 'RUSAK RINGAN', color: 'bg-yellow-100 text-yellow-700 border-yellow-300 hover:bg-yellow-200', icon: AlertTriangle },
+    { id: 'rusak_berat', label: 'RUSAK BERAT', color: 'bg-orange-100 text-orange-700 border-orange-300 hover:bg-orange-200', icon: X },
     { id: 'hilang', label: 'HILANG', color: 'bg-red-100 text-red-700 border-red-300 hover:bg-red-200', icon: Search },
 ] as const
 
@@ -87,6 +103,7 @@ export default function PengembalianPage() {
     const [activeTab, setActiveTab] = useState<'approved' | 'history'>('approved')
     const [searchTerm, setSearchTerm] = useState('')
     const [detailModal, setDetailModal] = useState<{ isOpen: boolean, data: any }>({ isOpen: false, data: null })
+    const [initialInspectionDetail, setInitialInspectionDetail] = useState<PreBorrowInspection | null>(null)
     const [scanKode, setScanKode] = useState('')
     const [scanLoading, setScanLoading] = useState(false)
     const [cameraOpen, setCameraOpen] = useState(false)
@@ -96,8 +113,9 @@ export default function PengembalianPage() {
     // Return Process State activeLoanData
     const [activeLoanData, setActiveLoanData] = useState<any>(null)
     const [verifications, setVerifications] = useState<VerificationSection[]>([
-        { id: 1, jumlah: 1, kondisi: 'baik', catatan: '' },
+        { id: 1, jumlah: 1, kondisi: 'baik', catatan: '', previewUrl: null },
     ])
+    const [initialInspection, setInitialInspection] = useState<PreBorrowInspection | null>(null)
 
     /* ================= INITIAL FETCH ================= */
 
@@ -139,7 +157,8 @@ export default function PengembalianPage() {
                         profiles!peminjaman_user_id_fkey(nama_lengkap),
                         peminjaman_detail(
                             jumlah,
-                            sarpras(id, nama, kode)
+                            sarpras(id, nama, kode),
+                            pre_borrow_inspection(id, kondisi_awal, catatan, foto, inspected_at, pre_borrow_inspection_item(item_label, kondisi, catatan))
                         )
                     `)
                     .in('status', ['dipinjam', 'disetujui']) // Fetching both just in case, logic usually filters 'dipinjam' for returns
@@ -198,10 +217,34 @@ export default function PengembalianPage() {
 
     /* ================= ACTIONS ================= */
 
+    const fetchInitialInspectionDetail = async (peminjamanId: string) => {
+        const { data: detail } = await supabase
+            .from('peminjaman_detail')
+            .select('sarpras_id')
+            .eq('peminjaman_id', peminjamanId)
+            .limit(1)
+            .single()
+
+        if (!detail?.sarpras_id) return null
+
+        const { data: inspection } = await supabase
+            .from('pre_borrow_inspection')
+            .select('id, kondisi_awal, catatan, foto, inspected_at, pre_borrow_inspection_item(item_label, kondisi, catatan)')
+            .eq('peminjaman_id', peminjamanId)
+            .eq('unit_id', detail.sarpras_id)
+            .order('inspected_at', { ascending: false })
+            .limit(1)
+            .single()
+
+        return inspection as PreBorrowInspection | null
+    }
+
     const handleProcessReturn = (loan: any) => {
+        verifications.forEach(v => v.previewUrl && URL.revokeObjectURL(v.previewUrl))
         setActiveLoanData(loan)
+        setInitialInspection(loan.pre_borrow_inspection?.[0] || null)
         const borrowedAmount = loan.peminjaman_detail?.[0]?.jumlah ?? 1
-        setVerifications([{ id: 1, jumlah: borrowedAmount, kondisi: 'baik', catatan: '' }])
+        setVerifications([{ id: 1, jumlah: borrowedAmount, kondisi: 'baik', catatan: '', previewUrl: null }])
         window.scrollTo({ top: 0, behavior: 'smooth' })
     }
 
@@ -217,7 +260,8 @@ export default function PengembalianPage() {
                     profiles!peminjaman_user_id_fkey(nama_lengkap),
                     peminjaman_detail(
                         jumlah,
-                        sarpras(id, nama, kode)
+                        sarpras(id, nama, kode),
+                            pre_borrow_inspection(id, kondisi_awal, catatan, foto, inspected_at, pre_borrow_inspection_item(item_label, kondisi, catatan))
                     )
                 `)
                 .eq('kode_peminjaman', kode)
@@ -281,7 +325,7 @@ export default function PengembalianPage() {
         const used = verifications.reduce((a, b) => a + b.jumlah, 0)
         const remaining = Math.max(0, borrowed - used)
         if (remaining === 0) return
-        setVerifications([...verifications, { id: newId, jumlah: remaining, kondisi: 'baik', catatan: '' }])
+        setVerifications([...verifications, { id: newId, jumlah: remaining, kondisi: 'baik', catatan: '', previewUrl: null }])
     }
 
     const updateVerification = (id: number, field: keyof VerificationSection, value: any) => {
@@ -290,11 +334,24 @@ export default function PengembalianPage() {
 
     const removeVerification = (id: number) => {
         if (verifications.length <= 1) return
-        setVerifications(v => v.filter(item => item.id !== id))
+        setVerifications(v => {
+            const target = v.find(item => item.id === id)
+            if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl)
+            return v.filter(item => item.id !== id)
+        })
     }
 
     const handleFileChange = (id: number, e: React.ChangeEvent<HTMLInputElement>) => {
-        updateVerification(id, 'file', e.target.files?.[0] ?? null)
+        const file = e.target.files?.[0] ?? null
+        setVerifications(v => v.map(item => {
+            if (item.id !== id) return item
+            if (item.previewUrl) URL.revokeObjectURL(item.previewUrl)
+            return {
+                ...item,
+                file,
+                previewUrl: file ? URL.createObjectURL(file) : null,
+            }
+        }))
     }
 
     const handleSubmitReturn = async () => {
@@ -342,7 +399,12 @@ export default function PengembalianPage() {
             alert('Pengembalian berhasil diproses!')
             window.location.reload()
         } catch (err: any) {
-            alert('Gagal: ' + err.message)
+            const message = String(err?.message || '')
+            if (message.toLowerCase().includes('bucket not found')) {
+                alert('Gagal: Bucket not found. Buat bucket Storage bernama SARPRAS (atau sarpras) di Supabase.')
+            } else {
+                alert('Gagal: ' + message)
+            }
             setIsLoading(false)
         }
     }
@@ -471,9 +533,20 @@ export default function PengembalianPage() {
                                                             </span>
                                                         </td>
                                                         <td className="px-6 py-4 text-right">
-                                                            <Button size="sm" onClick={() => handleProcessReturn(loan)} className="bg-blue-600 hover:bg-blue-700">
-                                                                Proses <ArrowRight className="w-4 h-4 ml-1" />
-                                                            </Button>
+                                                            <div className="flex justify-end gap-2">
+                                                                {loan.status === 'disetujui' && (
+                                                                    <Button
+                                                                        size="sm"
+                                                                        variant="outline"
+                                                                        onClick={() => router.push(`/dashboard/petugas/inspeksi-awal?loan=${loan.id}`)}
+                                                                    >
+                                                                        Inspeksi
+                                                                    </Button>
+                                                                )}
+                                                                <Button size="sm" onClick={() => handleProcessReturn(loan)} className="bg-blue-600 hover:bg-blue-700">
+                                                                    Proses <ArrowRight className="w-4 h-4 ml-1" />
+                                                                </Button>
+                                                            </div>
                                                         </td>
                                                     </tr>
                                                 ))
@@ -517,7 +590,15 @@ export default function PengembalianPage() {
                                                             <td className="px-6 py-4 font-medium">{user?.nama_lengkap || '-'}</td>
                                                             <td className="px-6 py-4 text-gray-500">{officer?.nama_lengkap || '-'}</td>
                                                             <td className="px-6 py-4 text-right">
-                                                                <Button variant="ghost" size="sm" onClick={() => setDetailModal({ isOpen: true, data: { ...item, peminjaman: loan, user, officer } })}>
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    onClick={async () => {
+                                                                        const initial = await fetchInitialInspectionDetail(item.peminjaman_id)
+                                                                        setInitialInspectionDetail(initial)
+                                                                        setDetailModal({ isOpen: true, data: { ...item, peminjaman: loan, user, officer } })
+                                                                    }}
+                                                                >
                                                                     <Eye className="w-4 h-4 text-blue-600" />
                                                                 </Button>
                                                             </td>
@@ -539,7 +620,7 @@ export default function PengembalianPage() {
                 <div className="animate-in slide-in-from-bottom-4 duration-500 pt-4">
                     <div className="flex items-center justify-between mb-6">
                         <div>
-                            <Button variant="ghost" className="pl-0 text-gray-500 hover:text-gray-900 mb-2" onClick={() => setActiveLoanData(null)}>
+                            <Button variant="ghost" className="pl-0 text-gray-500 hover:text-gray-900 mb-2" onClick={() => { setActiveLoanData(null); setInitialInspection(null) }}>
                                 &larr; Kembali ke daftar
                             </Button>
                             <h2 className="text-2xl font-bold text-gray-900">Proses Pengembalian</h2>
@@ -567,6 +648,34 @@ export default function PengembalianPage() {
                                     <label className="text-xs font-bold text-gray-400 uppercase">Jumlah Dipinjam</label>
                                     <p className="font-bold text-xl text-blue-600">{activeLoanData.peminjaman_detail?.[0]?.jumlah} Unit</p>
                                 </div>
+                                {initialInspection && (
+                                    <div>
+                                        <label className="text-xs font-bold text-gray-400 uppercase">Kondisi Awal</label>
+                                        <p className="mt-1 inline-flex rounded-full bg-cyan-100 px-2 py-1 text-xs font-semibold text-cyan-700 uppercase">
+                                            {initialInspection.kondisi_awal}
+                                        </p>
+                                        {initialInspection.catatan && (
+                                            <p className="mt-2 text-xs text-gray-600 whitespace-pre-wrap">{initialInspection.catatan}</p>
+                                        )}
+                                        {initialInspection.pre_borrow_inspection_item && initialInspection.pre_borrow_inspection_item.length > 0 && (
+                                            <div className="mt-2 rounded-lg border p-2">
+                                                <div className="text-[11px] font-semibold text-gray-500 mb-1">Checklist Awal</div>
+                                                <div className="space-y-1">
+                                                    {initialInspection.pre_borrow_inspection_item.map((ci, idx) => (
+                                                        <div key={`${ci.item_label}-${idx}`} className="text-[11px] text-gray-700">
+                                                            {idx + 1}. {ci.item_label}: <span className="font-semibold uppercase">{ci.kondisi}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                        {initialInspection.foto && (
+                                            <a href={initialInspection.foto} target="_blank" rel="noreferrer" className="mt-2 inline-block text-xs text-blue-600 hover:underline">
+                                                Lihat foto kondisi awal
+                                            </a>
+                                        )}
+                                    </div>
+                                )}
                             </CardContent>
                         </Card>
 
@@ -622,13 +731,16 @@ export default function PengembalianPage() {
                                                 <div className="mb-3 flex items-center gap-3">
                                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                                     <img
-                                                        src={URL.createObjectURL(v.file)}
+                                                        src={v.previewUrl || URL.createObjectURL(v.file)}
                                                         alt="Preview"
                                                         className="h-16 w-16 rounded-lg object-cover border"
                                                     />
                                                     <button
                                                         className="text-xs text-gray-500 hover:text-gray-700"
-                                                        onClick={() => updateVerification(v.id, 'file', null)}
+                                                        onClick={() => {
+                                                            if (v.previewUrl) URL.revokeObjectURL(v.previewUrl)
+                                                            setVerifications(items => items.map(item => item.id === v.id ? { ...item, file: null, previewUrl: null } : item))
+                                                        }}
                                                     >
                                                         Hapus dari tampilan
                                                     </button>
@@ -672,7 +784,7 @@ export default function PengembalianPage() {
                     <Card className="w-full max-w-md shadow-2xl">
                         <CardHeader className="flex flex-row justify-between items-center">
                             <CardTitle>Detail Pengembalian</CardTitle>
-                            <Button variant="ghost" size="icon" onClick={() => setDetailModal({ isOpen: false, data: null })}><X /></Button>
+                            <Button variant="ghost" size="icon" onClick={() => { setDetailModal({ isOpen: false, data: null }); setInitialInspectionDetail(null) }}><X /></Button>
                         </CardHeader>
                         <CardContent className="space-y-4 pt-0">
                             <div className="p-4 bg-gray-50 rounded-lg space-y-2 text-sm">
@@ -689,6 +801,37 @@ export default function PengembalianPage() {
                                     <span className="font-medium text-green-600">{new Date(detailModal.data.tanggal_kembali_real).toLocaleDateString('id-ID')}</span>
                                 </div>
                             </div>
+                              {initialInspectionDetail && (
+                                  <div>
+                                      <h4 className="font-bold text-sm mb-2">Kondisi Awal</h4>
+                                      <div className="rounded-lg border p-3 text-sm space-y-2">
+                                          <div className="flex items-center justify-between">
+                                              <span className="text-gray-500">Kondisi</span>
+                                              <span className="font-semibold uppercase text-cyan-700">{initialInspectionDetail.kondisi_awal}</span>
+                                          </div>
+                                          {initialInspectionDetail.catatan && (
+                                              <p className="text-xs text-gray-600 whitespace-pre-wrap">{initialInspectionDetail.catatan}</p>
+                                          )}
+                                          {initialInspectionDetail.pre_borrow_inspection_item && initialInspectionDetail.pre_borrow_inspection_item.length > 0 && (
+                                              <div className="text-xs text-gray-600">
+                                                  <div className="font-semibold text-gray-500 mb-1">Checklist Awal</div>
+                                                  <div className="space-y-1">
+                                                      {initialInspectionDetail.pre_borrow_inspection_item.map((ci, idx) => (
+                                                          <div key={`${ci.item_label}-${idx}`}>
+                                                              {idx + 1}. {ci.item_label}: <span className="font-semibold uppercase">{ci.kondisi}</span>
+                                                          </div>
+                                                      ))}
+                                                  </div>
+                                              </div>
+                                          )}
+                                          {initialInspectionDetail.foto && (
+                                              <a href={initialInspectionDetail.foto} target="_blank" rel="noreferrer" className="text-xs text-blue-600 hover:underline">
+                                                  Lihat foto kondisi awal
+                                              </a>
+                                          )}
+                                      </div>
+                                  </div>
+                              )}
                               <div>
                                   <h4 className="font-bold text-sm mb-2">Catatan Petugas</h4>
                                   <p className="text-sm text-gray-600 bg-white border p-3 rounded-lg whitespace-pre-wrap">
@@ -733,3 +876,6 @@ export default function PengembalianPage() {
         </div>
     )
 }
+
+
+

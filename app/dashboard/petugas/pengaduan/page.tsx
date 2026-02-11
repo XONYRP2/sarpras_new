@@ -19,6 +19,7 @@ interface Pengaduan {
     kategori_kerusakan: string | null
     prioritas: string
     status: string
+    catatan?: string | null
     created_at: string
     updated_at: string
 }
@@ -49,6 +50,7 @@ export default function PengaduanPage() {
     const [isActionOpen, setIsActionOpen] = useState(false)
     const [actionTarget, setActionTarget] = useState<Pengaduan | null>(null)
     const [actionStatus, setActionStatus] = useState('menunggu')
+    const [actionNote, setActionNote] = useState('')
     const [isUpdating, setIsUpdating] = useState(false)
     const [formData, setFormData] = useState({
         user_id: '',
@@ -167,6 +169,7 @@ export default function PengaduanPage() {
     const openActionModal = (pengaduan: Pengaduan) => {
         setActionTarget(pengaduan)
         setActionStatus(pengaduan.status)
+        setActionNote(pengaduan.catatan || '')
         setIsActionOpen(true)
     }
 
@@ -179,7 +182,7 @@ export default function PengaduanPage() {
         try {
             const { data, error } = await supabase
                 .from('pengaduan')
-                .update({ status: actionStatus })
+                .update({ status: actionStatus, catatan: actionNote || null })
                 .eq('id', actionTarget.id)
                 .select('*')
                 .single()
@@ -680,6 +683,15 @@ export default function PengaduanPage() {
                                     ))}
                                 </select>
                             </div>
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-gray-700">Catatan</label>
+                                <textarea
+                                    value={actionNote}
+                                    onChange={(e) => setActionNote(e.target.value)}
+                                    className="w-full min-h-[100px] rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gray-900"
+                                    placeholder="Tambahkan catatan penanganan..."
+                                />
+                            </div>
 
                             <div className="flex gap-2 pt-2">
                                 <Button
@@ -688,6 +700,7 @@ export default function PengaduanPage() {
                                     onClick={() => {
                                         setIsActionOpen(false)
                                         setActionTarget(null)
+                                        setActionNote('')
                                     }}
                                     disabled={isUpdating}
                                 >
